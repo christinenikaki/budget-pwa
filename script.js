@@ -280,3 +280,18 @@ function showDataSections() {
     if(dashboardSection) dashboardSection.classList.remove('hidden');
     if(transactionsSection) transactionsSection.classList.remove('hidden');
 }
+
+// --- PWA Service Worker Registration ---
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js') // Path relative to origin
+        .then(registration => {
+          console.log('Service Worker registered successfully with scope:', registration.scope);
+        })
+        .catch(error => {
+          console.error('Service Worker registration failed:', error);
+        });
+    });
+  } else {
+    console.log('Service Worker is not supported by this browser.');
+  }
