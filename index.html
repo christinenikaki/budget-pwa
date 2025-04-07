@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- Responsive viewport tag -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Link to your CSS file -->
+    <link rel="stylesheet" href="style.css">
+    <title>Zero Budget PWA</title>
+    <!-- Defer script loading until HTML is parsed -->
+    <script src="script.js" defer></script>
+</head>
+<body>
+
+    <header>
+        <h1>My Budget Companion</h1>
+    </header>
+
+    <main class="container">
+        <section id="file-loader" class="card">
+            <h2>Load Budget Data</h2>
+            <p>Select your <code>budget_data.json</code> file:</p>
+            <!-- File input -->
+            <input type="file" id="jsonFileInput" accept=".json">
+            <div id="load-status"></div>
+        </section>
+
+        <section id="dashboard-summary" class="card hidden">
+             <h2>Dashboard</h2>
+             <div id="account-balances">
+                 <h3>Account Balances</h3>
+                 <ul id="balances-list">
+                     <!-- Balances will be populated here by JS -->
+                     <li>Loading...</li>
+                 </ul>
+             </div>
+             <div id="ready-to-assign">
+                 <h3>Ready to Assign</h3>
+                 <p id="rta-value">Loading...</p>
+             </div>
+        </section>
+
+        <section id="transactions-list" class="card hidden">
+            <h2>Transactions</h2>
+            <table id="transactions-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Account</th>
+                        <th>Payee</th>
+                        <th>Category</th>
+                        <th>Amount</th>
+                    </tr>
+                </thead>
+                <tbody id="transactions-tbody">
+                    <!-- Transactions will be populated here by JS -->
+                    <tr><td colspan="6">Please load data...</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+    </main>
+
+    <footer>
+        <p>© <span id="current-year"></span> Your Name</p>
+    </footer>
+
+</body>
+</html>
