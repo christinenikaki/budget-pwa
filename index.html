@@ -52,7 +52,42 @@
         </section>
 
         <section id="transactions-list" class="card hidden">
+            <div class="filter-controls card">
+                <h3>Filter Transactions</h3>
+                <div class="filter-grid">
+                    <div class="form-group">
+                        <label for="filter-search">Search (Payee/Memo):</label>
+                        <input type="text" id="filter-search" placeholder="e.g., supermarket, amazon">
+                    </div>
+                    <div class="form-group">
+                        <label for="filter-account">Account:</label>
+                        <select id="filter-account">
+                            <option value="">-- All Accounts --</option>
+                            <!-- Accounts populated by JS -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="filter-category">Category:</label>
+                        <select id="filter-category">
+                            <option value="">-- All Categories --</option>
+                            <!-- Categories populated by JS -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="filter-start-date">Start Date:</label>
+                        <input type="date" id="filter-start-date">
+                    </div>
+                    <div class="form-group">
+                        <label for="filter-end-date">End Date:</label>
+                        <input type="date" id="filter-end-date">
+                    </div>
+                    <div class="form-group">
+                        <button type="button" id="reset-filters" class="button button-secondary">Reset Filters</button>
+                    </div>
+                </div>
+            </div>
             <h2>Transactions</h2>
+            <p id="no-results-message" class="hidden" style="text-align: center; margin: 15px; font-style: italic;">No transactions match the current filters.</p>
             <table id="transactions-table">
                 <thead>
                     <tr>

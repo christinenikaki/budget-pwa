@@ -180,3 +180,60 @@ footer {
 #month-summary span { /* Style for the actual values */
    font-weight: 500;
 }
+
+.filter-controls {
+    background-color: #f8f9fa; /* Use a light background like summary boxes */
+    padding: 15px 20px;
+    /* border: 1px solid #dee2e6; */ /* Already has card border */
+    /* border-radius: 5px; */ /* Already has card border-radius */
+    margin-bottom: 25px;
+}
+
+.filter-controls h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #dee2e6;
+    padding-bottom: 10px;
+    font-size: 1.2em;
+    color: #495057;
+}
+
+.filter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); /* Responsive columns */
+    gap: 15px 20px; /* Row and column gap */
+    align-items: end; /* Align items to the bottom (looks good with button) */
+}
+
+/* Optional: Style form groups within the grid if needed */
+.filter-grid .form-group {
+    margin-bottom: 0; /* Remove default margin if your .form-group class adds one */
+}
+
+.filter-controls label {
+    font-size: 0.9em;
+    font-weight: bold;
+    margin-bottom: 3px;
+    color: #555;
+    display: block; /* Ensure label is above input */
+}
+
+.filter-controls input[type="text"],
+.filter-controls input[type="date"],
+.filter-controls select {
+    width: 100%; /* Make inputs fill grid cell */
+    padding: 8px;
+    font-size: 0.95em;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+}
+
+.filter-controls button {
+    padding: 8px 15px; /* Match input height better */
+    width: 100%; /* Make button fill cell */
+    margin-top: 0; /* Remove default margin */
+}
+
+#no-results-message {
+     color: #6c757d; /* Gray text */
+}

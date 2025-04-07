@@ -12,6 +12,13 @@ const currentYearSpan = document.getElementById('current-year');
 const summaryMonthElement = document.getElementById('summary-month');
 const summaryIncomeElement = document.getElementById('summary-income');
 const summarySpendingElement = document.getElementById('summary-spending');
+const filterSearchInput = document.getElementById('filter-search');
+const filterAccountSelect = document.getElementById('filter-account');
+const filterCategorySelect = document.getElementById('filter-category');
+const filterStartDateInput = document.getElementById('filter-start-date');
+const filterEndDateInput = document.getElementById('filter-end-date');
+const resetFiltersButton = document.getElementById('reset-filters');
+const noResultsMessage = document.getElementById('no-results-message');
 
 // --- Initial Setup ---
 if (currentYearSpan) {
@@ -105,6 +112,9 @@ function processBudgetData(data) {
 
     // --- Update UI Sections ---
     try {
+        populateAccountFilter(data.accounts);
+        // Pass both categories list AND transactions to catch all used categories
+        populateCategoryFilter(data.categories, data.transactions);
         const latestMonth = findLatestMonth(data.transactions);
         let monthSummary = { latestMonth: latestMonth, income: 0, spending: 0 }; // Default
         if (latestMonth) {
@@ -117,6 +127,8 @@ function processBudgetData(data) {
         displayAccountBalances(data.accounts);
         displayRTA(data.ready_to_assign);
         displayTransactions(data.transactions);
+
+        resetAllFilters(); // Call reset to ensure table matches default filter state
 
         // Show the data sections now that they are populated
         showDataSections();
@@ -259,7 +271,7 @@ function displayRTA(rta) {
 }
 
 /**
- * Displays transactions in the table.
+ * Displays transactions in the table, adding data attributes for filtering.
  * @param {Array} transactions The transactions array from the JSON data.
  */
 function displayTransactions(transactions) {
@@ -268,69 +280,137 @@ function displayTransactions(transactions) {
 
     if (transactions.length === 0) {
         transactionsTbody.innerHTML = '<tr><td colspan="6">No transactions found.</td></tr>';
+        // Hide no results message initially if table is empty
+         if (noResultsMessage) noResultsMessage.classList.add('hidden');
         return;
     }
 
-    // Optional: Sort transactions by date (descending) like in the Python app
+    // Optional: Sort transactions by date (descending)
     const sortedTransactions = transactions.sort((a, b) => {
-        // Basic date sort, assumes YYYY-MM-DD format
-        // More robust sorting might handle invalid dates better
         const dateA = a.date || '0000-00-00';
         const dateB = b.date || '0000-00-00';
-        return dateB.localeCompare(dateA); // Newest first
+        return dateB.localeCompare(dateA);
     });
 
 
     sortedTransactions.forEach(tx => {
         const row = transactionsTbody.insertRow();
 
+        // --- Store data in data-* attributes for filtering ---
+        const txDate = tx.date || '';
+        const txType = tx.type || 'unknown';
+        // Handle account based on type
+        let txAccount = ''; // Account used for filtering (single value)
+        let displayAccount = 'N/A'; // What's shown in the cell
+        if (txType === 'transfer') {
+            txAccount = `${tx.source_account || '?'}|${tx.destination_account || '?'}`; // Store both for potential complex filter, or pick one? Let's just use source for simplicity here
+            displayAccount = `${tx.source_account || '?'} -> ${tx.destination_account || '?'}`;
+            // For filtering, maybe check if filter matches EITHER source or dest?
+            // Alternative: Just filter based on source account maybe? Let's try filtering on source only first.
+            row.dataset.account = tx.source_account || ''; // Filter based on source
+            // Or add both: row.dataset.sourceAccount = tx.source_account || ''; row.dataset.destAccount = tx.destination_account || '';
+        } else {
+            txAccount = tx.account || '';
+            displayAccount = txAccount;
+            row.dataset.account = txAccount; // Store account name
+        }
+        const txCategory = tx.category || (txType === 'transfer' ? '' : 'Uncategorized'); // Use '' for transfer category filter
+        const txPayee = tx.payee || (txType === 'transfer' ? 'Transfer' : '');
+        const txMemo = tx.memo || '';
+
+        row.dataset.date = txDate;
+        row.dataset.category = txCategory;
+        row.dataset.payee = txPayee; // Store raw payee
+        row.dataset.memo = txMemo; // Store raw memo
+        // row.dataset.account is set above based on type
+
+
+        // --- Populate Cells ---
         const cellDate = row.insertCell();
-        cellDate.textContent = tx.date || 'N/A';
+        cellDate.textContent = txDate || 'N/A';
 
         const cellType = row.insertCell();
-        cellType.textContent = tx.type ? tx.type.charAt(0).toUpperCase() + tx.type.slice(1) : 'N/A'; // Capitalize
+        cellType.textContent = txType.charAt(0).toUpperCase() + txType.slice(1);
 
         const cellAccount = row.insertCell();
-        // Handle transfer accounts differently
-        if (tx.type === 'transfer') {
-             cellAccount.textContent = `${tx.source_account || '?'} -> ${tx.destination_account || '?'}`;
-             cellAccount.style.fontStyle = 'italic'; // Indicate transfer
-        } else {
-             cellAccount.textContent = tx.account || 'N/A';
-        }
-
+        cellAccount.textContent = displayAccount;
+         if (txType === 'transfer') cellAccount.style.fontStyle = 'italic';
 
         const cellPayee = row.insertCell();
-        // Use Payee for I/E/R, potentially Memo for Transfer if no specific payee field
-        cellPayee.textContent = tx.payee || tx.memo || (tx.type === 'transfer' ? 'Transfer' : 'N/A');
+        cellPayee.textContent = txPayee || txMemo || 'N/A'; // Display Payee or Memo if payee empty
+
 
         const cellCategory = row.insertCell();
-        cellCategory.textContent = tx.category || (tx.type === 'transfer' ? '-' : 'Uncategorized'); // Show '-' for transfers
+        cellCategory.textContent = txCategory || '-'; // Display category or '-'
 
         const cellAmount = row.insertCell();
         cellAmount.textContent = formatCurrency(tx.amount || 0);
         // Add class based on transaction type for potential styling
-        switch(tx.type) {
-            case 'income':
-                cellAmount.classList.add('positive-currency'); // Green
-                break;
-            case 'expense':
-                cellAmount.classList.add('negative-currency'); // Red
-                break;
-            case 'refund':
-                 cellAmount.classList.add('positive-currency'); // Green (or could be neutral)
-                 break;
-             case 'transfer':
-                 cellAmount.classList.add('zero-currency'); // Neutral grey
-                 break;
-            default:
-                 cellAmount.classList.add('zero-currency');
-        }
-         cellAmount.style.textAlign = 'right'; // Align amounts right
-         cellAmount.style.fontFamily = 'monospace'; // Monospace for alignment
+         switch(txType) { // Simplified from before
+             case 'income': cellAmount.classList.add('positive-currency'); break;
+             case 'expense': cellAmount.classList.add('negative-currency'); break;
+             case 'refund': cellAmount.classList.add('positive-currency'); break; // Or neutral?
+             case 'transfer': cellAmount.classList.add('zero-currency'); break;
+             default: cellAmount.classList.add('zero-currency');
+         }
+         cellAmount.style.textAlign = 'right';
+         cellAmount.style.fontFamily = 'monospace';
+    });
+
+     // Ensure no-results message is hidden after populating
+     if (noResultsMessage) noResultsMessage.classList.add('hidden');
+}
+
+/**
+ * Populates the account filter dropdown.
+ * @param {object} accounts Accounts object { accountName: balance }.
+ */
+function populateAccountFilter(accounts) {
+    if (!filterAccountSelect) return;
+    // Clear existing options (keep the first "-- All --" option)
+    filterAccountSelect.length = 1;
+
+    const accountNames = Object.keys(accounts).sort(); // Get sorted names
+    accountNames.forEach(name => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        filterAccountSelect.appendChild(option);
     });
 }
 
+/**
+ * Populates the category filter dropdown.
+ * @param {Array} categories Categories array [categoryName1, categoryName2].
+ * @param {Array} transactions Transaction list (to include categories only present in transactions)
+ */
+function populateCategoryFilter(categories = [], transactions = []) {
+    if (!filterCategorySelect) return;
+    // Clear existing options (keep the first "-- All --" option)
+    filterCategorySelect.length = 1;
+
+    // Create a set to store unique category names from both lists
+    const categorySet = new Set(categories);
+
+    // Add categories found only in transactions (e.g., if category list is incomplete)
+     transactions.forEach(tx => {
+        if(tx.category) categorySet.add(tx.category);
+        // Also add 'Uncategorized' if present and not already in main list
+        if (!tx.category && tx.type !== 'transfer' && !categorySet.has('Uncategorized')) {
+            categorySet.add('Uncategorized');
+        }
+     });
+
+
+    const categoryNames = Array.from(categorySet).sort(); // Get unique sorted names
+    categoryNames.forEach(name => {
+        if (!name) return; // Skip empty category names if any
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        filterCategorySelect.appendChild(option);
+    });
+}
 // --- Helper Functions ---
 
 /**
@@ -342,7 +422,7 @@ function formatCurrency(amount) {
     if (typeof amount !== 'number') {
         return "$?.??"; // Handle non-numeric input
     }
-    const options = { style: 'currency', currency: 'USD' }; // Adjust currency as needed (e.g., 'EUR')
+    const options = { style: 'currency', currency: 'EUR' }; // Adjust currency as needed (e.g., 'EUR')
     // Basic handling for negative display similar to Python version
     if (amount < 0) {
         // Format absolute value and wrap in parentheses
@@ -391,6 +471,90 @@ function showDataSections() {
     if(dashboardSection) dashboardSection.classList.remove('hidden');
     if(transactionsSection) transactionsSection.classList.remove('hidden');
 }
+/**
+ * Filters the displayed transaction rows based on current filter inputs.
+ */
+function filterTransactions() {
+    if (!transactionsTbody) return; // No table body to filter
+
+    // Get current filter values
+    const searchTerm = filterSearchInput.value.toLowerCase().trim();
+    const selectedAccount = filterAccountSelect.value;
+    const selectedCategory = filterCategorySelect.value;
+    const startDate = filterStartDateInput.value; // Format: YYYY-MM-DD
+    const endDate = filterEndDateInput.value;     // Format: YYYY-MM-DD
+
+    const rows = transactionsTbody.rows; // Get all rows in the tbody
+    let visibleRowCount = 0;
+
+    // Loop through all table rows (transactions)
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row.dataset) continue; // Skip if row has no data (e.g., header?) - safety check
+
+        // Get data from data-* attributes for the current row
+        const rowDate = row.dataset.date || '';
+        const rowAccount = row.dataset.account || ''; // Account name used for filtering
+        const rowCategory = row.dataset.category || '';
+        const rowPayee = (row.dataset.payee || '').toLowerCase();
+        const rowMemo = (row.dataset.memo || '').toLowerCase();
+
+        let showRow = true; // Assume row should be shown initially
+
+        // --- Apply filters ---
+
+        // 1. Search Term Filter (Payee or Memo)
+        if (searchTerm && !(rowPayee.includes(searchTerm) || rowMemo.includes(searchTerm))) {
+            showRow = false;
+        }
+
+        // 2. Account Filter
+        // If filtering transfers, maybe check if account is source OR dest?
+        // Current simple check: exact match on row.dataset.account
+        if (showRow && selectedAccount && rowAccount !== selectedAccount) {
+             // TODO: Enhance transfer filtering if needed (e.g., check source/dest if stored separately)
+             showRow = false;
+        }
+
+        // 3. Category Filter
+        if (showRow && selectedCategory && rowCategory !== selectedCategory) {
+            showRow = false;
+        }
+
+        // 4. Start Date Filter
+        if (showRow && startDate && rowDate && rowDate < startDate) { // Check rowDate exists
+            showRow = false;
+        }
+
+        // 5. End Date Filter
+        if (showRow && endDate && rowDate && rowDate > endDate) { // Check rowDate exists
+            showRow = false;
+        }
+
+        // --- Show/Hide Row ---
+        row.style.display = showRow ? '' : 'none'; // Show or hide
+        if (showRow) {
+            visibleRowCount++;
+        }
+    }
+
+     // Show/hide the 'no results' message
+    if (noResultsMessage) {
+        noResultsMessage.classList.toggle('hidden', visibleRowCount > 0);
+    }
+}
+
+/**
+ * Resets all filter inputs to their default state and re-applies filtering.
+ */
+function resetAllFilters() {
+    if (filterSearchInput) filterSearchInput.value = '';
+    if (filterAccountSelect) filterAccountSelect.value = '';
+    if (filterCategorySelect) filterCategorySelect.value = '';
+    if (filterStartDateInput) filterStartDateInput.value = '';
+    if (filterEndDateInput) filterEndDateInput.value = '';
+    filterTransactions(); // Re-apply filters (which will show all rows)
+}
 
 // --- PWA Service Worker Registration ---
 if ('serviceWorker' in navigator) {
@@ -406,3 +570,11 @@ if ('serviceWorker' in navigator) {
   } else {
     console.log('Service Worker is not supported by this browser.');
   }
+
+  // --- Filter Event Listeners ---
+if (filterSearchInput) filterSearchInput.addEventListener('input', filterTransactions);
+if (filterAccountSelect) filterAccountSelect.addEventListener('change', filterTransactions);
+if (filterCategorySelect) filterCategorySelect.addEventListener('change', filterTransactions);
+if (filterStartDateInput) filterStartDateInput.addEventListener('input', filterTransactions);
+if (filterEndDateInput) filterEndDateInput.addEventListener('input', filterTransactions);
+if (resetFiltersButton) resetFiltersButton.addEventListener('click', resetAllFilters);
