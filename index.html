@@ -27,18 +27,28 @@
         </section>
 
         <section id="dashboard-summary" class="card hidden">
-             <h2>Dashboard</h2>
-             <div id="account-balances">
-                 <h3>Account Balances</h3>
-                 <ul id="balances-list">
-                     <!-- Balances will be populated here by JS -->
-                     <li>Loading...</li>
-                 </ul>
-             </div>
-             <div id="ready-to-assign">
-                 <h3>Ready to Assign</h3>
-                 <p id="rta-value">Loading...</p>
-             </div>
+            <h2>Dashboard <span id="summary-month-display" style="font-size: 0.8em; color: #666;"></span></h2>
+
+            <div class="summary-grid"> 
+                <div id="ready-to-assign" class="summary-box">
+                    <h3>Ready to Assign</h3>
+                    <p id="rta-value" class="summary-value">Loading...</p>
+                </div>
+       
+                <div id="account-balances" class="summary-box">
+                    <h3>Account Balances</h3>
+                    <ul id="balances-list" class="summary-list">
+                        <li>Loading...</li>
+                    </ul>
+                </div>
+       
+                <div id="month-summary" class="summary-box">
+                     <h3>Latest Month Summary</h3>
+                     <p><strong class="summary-label">Month:</strong> <span id="summary-month">--</span></p>
+                     <p><strong class="summary-label">Total Income:</strong> <span id="summary-income">Loading...</span></p>
+                     <p><strong class="summary-label">Net Spending:</strong> <span id="summary-spending">Loading...</span></p>
+                </div>
+            </div>
         </section>
 
         <section id="transactions-list" class="card hidden">

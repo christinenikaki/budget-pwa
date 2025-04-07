@@ -9,6 +9,9 @@ const balancesList = document.getElementById('balances-list');
 const rtaValueElement = document.getElementById('rta-value');
 const transactionsTbody = document.getElementById('transactions-tbody');
 const currentYearSpan = document.getElementById('current-year');
+const summaryMonthElement = document.getElementById('summary-month');
+const summaryIncomeElement = document.getElementById('summary-income');
+const summarySpendingElement = document.getElementById('summary-spending');
 
 // --- Initial Setup ---
 if (currentYearSpan) {
@@ -102,6 +105,15 @@ function processBudgetData(data) {
 
     // --- Update UI Sections ---
     try {
+        const latestMonth = findLatestMonth(data.transactions);
+        let monthSummary = { latestMonth: latestMonth, income: 0, spending: 0 }; // Default
+        if (latestMonth) {
+            monthSummary = { // Recalculate if month found
+                latestMonth: latestMonth,
+                ...calculatePeriodSummary(latestMonth, data.transactions) // Spread calculated income/spending
+            };
+        }
+        displayDashboardSummary(monthSummary); // Update the summary section
         displayAccountBalances(data.accounts);
         displayRTA(data.ready_to_assign);
         displayTransactions(data.transactions);
@@ -115,7 +127,71 @@ function processBudgetData(data) {
          updateStatus(`Error displaying data: ${uiError.message}`, "error");
     }
 }
+/**
+* Finds the latest month (YYYY-MM) present in the transaction data.
+ * @param {Array} transactions The transactions array.
+ * @returns {string|null} The latest month string or null if none found.
+ */
+function findLatestMonth(transactions) {
+    let latestMonth = null;
+    if (!transactions || transactions.length === 0) {
+        return null;
+    }
+    transactions.forEach(tx => {
+        if (tx.date && typeof tx.date === 'string' && tx.date.length >= 7) {
+            const month = tx.date.substring(0, 7); // Extract YYYY-MM
+            // Basic validation for YYYY-MM format
+            if (/^\d{4}-\d{2}$/.test(month)) {
+                if (latestMonth === null || month > latestMonth) {
+                    latestMonth = month;
+                }
+            }
+        }
+    });
+    return latestMonth;
+}
 
+/**
+ * Calculates income and net spending for a specific period prefix (YYYY-MM).
+ * NOTE: This version does NOT exclude savings goals like the Python version might.
+ * @param {string} periodPrefix The period string (e.g., "2024-05").
+ * @param {Array} transactions The transactions array.
+ * @returns {object} An object { income: number, spending: number }.
+ */
+function calculatePeriodSummary(periodPrefix, transactions) {
+    let totalIncome = 0.0;
+    let totalExpense = 0.0;
+    let totalRefund = 0.0;
+
+    if (!periodPrefix || !transactions) {
+        return { income: 0.0, spending: 0.0 };
+    }
+
+    transactions.forEach(tx => {
+        if (tx.date && typeof tx.date === 'string' && tx.date.startsWith(periodPrefix) && tx.type !== 'transfer') {
+            try {
+                const amount = parseFloat(tx.amount || 0);
+                if (isNaN(amount)) { // Skip if amount is not a valid number
+                   console.warn(`Skipping transaction with invalid amount in period ${periodPrefix}:`, tx);
+                   return;
+                }
+
+                if (tx.type === 'income') {
+                    totalIncome += amount;
+                } else if (tx.type === 'expense') {
+                    totalExpense += amount;
+                } else if (tx.type === 'refund') {
+                    totalRefund += amount;
+                }
+            } catch (e) {
+                console.error(`Error processing amount for transaction ID ${tx.id || 'N/A'}:`, e);
+            }
+        }
+    });
+
+    const netSpending = totalExpense - totalRefund;
+    return { income: totalIncome, spending: netSpending };
+}
 // --- UI Update Functions ---
 
 /**
@@ -144,6 +220,32 @@ function displayAccountBalances(accounts) {
         li.appendChild(span);
         balancesList.appendChild(li);
     });
+}
+
+/**
+ * Displays the calculated dashboard summary for the latest month.
+ * @param {object} summaryData Object containing { latestMonth, income, spending }.
+ */
+function displayDashboardSummary(summaryData) {
+    if (!summaryMonthElement || !summaryIncomeElement || !summarySpendingElement) {
+        console.error("Dashboard summary elements not found in DOM!");
+        return;
+    }
+    if (!summaryData || !summaryData.latestMonth) {
+         summaryMonthElement.textContent = 'N/A';
+         summaryIncomeElement.textContent = formatCurrency(0);
+         summarySpendingElement.textContent = formatCurrency(0);
+         return;
+    }
+
+    summaryMonthElement.textContent = summaryData.latestMonth;
+
+    summaryIncomeElement.textContent = formatCurrency(summaryData.income);
+    summaryIncomeElement.className = summaryData.income > 0 ? 'positive-currency' : 'zero-currency';
+
+    summarySpendingElement.textContent = formatCurrency(summaryData.spending);
+     // Spending is typically "negative" impact, show red if > 0 spent
+    summarySpendingElement.className = summaryData.spending > 0 ? 'negative-currency' : (summaryData.spending < 0 ? 'positive-currency' : 'zero-currency');
 }
 
 /**
@@ -267,6 +369,15 @@ function clearDataDisplay() {
     if (balancesList) balancesList.innerHTML = '<li>Load data...</li>';
     if (rtaValueElement) rtaValueElement.textContent = 'Load data...';
     if (transactionsTbody) transactionsTbody.innerHTML = '<tr><td colspan="6">Load data...</td></tr>';
+    if (summaryMonthElement) summaryMonthElement.textContent = '--';
+    if (summaryIncomeElement) {
+         summaryIncomeElement.textContent = 'Loading...';
+         summaryIncomeElement.className = ''; // Reset class
+    }
+    if (summarySpendingElement) {
+         summarySpendingElement.textContent = 'Loading...';
+         summarySpendingElement.className = ''; // Reset class
+    }
 }
 
 /** Hides the main data sections. */

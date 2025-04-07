@@ -121,3 +121,62 @@ footer {
     font-family: monospace;
      white-space: nowrap;
 }
+
+/* Dashboard Grid Layout */
+.summary-grid {
+    display: grid;
+    /* Create 2 columns on wider screens, 1 column on smaller */
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px; /* Space between boxes */
+    margin-top: 15px;
+}
+
+.summary-box {
+    background-color: #f8f9fa; /* Light background for boxes */
+    padding: 15px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+}
+
+.summary-box h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 1.1em;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+}
+
+.summary-value { /* Style for prominent values like RTA */
+     font-size: 1.6em;
+     font-weight: bold;
+     line-height: 1.2;
+     display: block; /* Ensure it takes its own line */
+     margin-bottom: 5px;
+}
+
+.summary-list { /* Style for lists like account balances */
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-size: 0.95em;
+}
+.summary-list li {
+    padding: 3px 0;
+    display: flex;
+    justify-content: space-between;
+}
+
+#month-summary p { /* Style for the income/spending lines */
+    margin-bottom: 8px;
+    font-size: 1em;
+    display: flex;
+    justify-content: space-between;
+}
+.summary-label { /* Style for "Total Income:", etc. */
+   color: #555;
+   margin-right: 10px;
+}
+
+#month-summary span { /* Style for the actual values */
+   font-weight: 500;
+}
