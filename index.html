@@ -18,7 +18,18 @@
     <header>
         <h1>My Budget Companion</h1>
     </header>
-
+    <nav id="side-menu" class="side-menu">
+        <button id="menu-close" class="menu-close-button" aria-label="Close Menu">×</button>
+        <ul>
+            <li><a href="#dashboard-summary" class="nav-link" data-section="dashboard-summary">Dashboard</a></li>
+            <li><a href="#budget-view" class="nav-link" data-section="budget-view">Budget </a></li>
+            <li><a href="#charts-section" class="nav-link" data-section="charts-section">Charts</a></li>
+            <li><a href="#add-expense-form" class="nav-link" data-section="add-expense-form">Add Entry</a></li>
+            <li><a href="#transactions-list" class="nav-link" data-section="transactions-list">Transactions</a></li>
+            <li><a href="#sync-section" class="nav-link" data-section="sync-section">Sync Data</a></li>
+        </ul>
+    </nav>
+    <div id="overlay" class="overlay"></div>
     <main class="container">
         <section id="file-loader" class="card">
             <h2>Load Budget Data</h2>

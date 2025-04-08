@@ -1,3 +1,4 @@
+// python3 -m http.server
 console.log("Script loaded!");
 
 // --- DOM Element References ---
@@ -52,6 +53,13 @@ const spendingChartCanvas = document.getElementById('spendingPieChart');
 const chartMonthDisplaySpan = document.getElementById('chart-month-display');
 const chartNoDataMsg = document.getElementById('chart-no-data');
 let spendingPieChartInstance = null; // To destroy previous chart before rendering new one
+
+const menuToggleButton = document.getElementById('menu-toggle');
+const menuCloseButton = document.getElementById('menu-close');
+const sideMenu = document.getElementById('side-menu');
+const overlay = document.getElementById('overlay');
+const navLinks = document.querySelectorAll('.nav-link');
+const mainSections = document.querySelectorAll('.main-section'); // Get all sections
 
 // --- Define Constants ---
 const DB_NAME = 'budgetAppDB';
@@ -127,6 +135,57 @@ if (fileInput) {
 } else {
     console.error("File input element not found!");
 }
+
+// --- Menu Toggle Functionality ---
+function toggleMenu(forceClose = false) {
+    if (!sideMenu || !overlay) return;
+    const isOpen = sideMenu.classList.contains('open');
+    if (forceClose || isOpen) {
+        sideMenu.classList.remove('open');
+        overlay.classList.remove('visible');
+    } else {
+        sideMenu.classList.add('open');
+        overlay.classList.add('visible');
+    }
+}
+
+// --- Event Listeners for Menu ---
+if (menuToggleButton) {
+    menuToggleButton.addEventListener('click', () => toggleMenu());
+}
+if (menuCloseButton) {
+    menuCloseButton.addEventListener('click', () => toggleMenu(true)); // Force close
+}
+if (overlay) {
+    overlay.addEventListener('click', () => toggleMenu(true)); // Close on overlay click
+}
+
+// --- Navigation Link Click Handler ---
+navLinks.forEach(link => {
+    link.addEventListener('click', (event) => {
+        event.preventDefault(); // Stop default link behavior
+        const sectionId = link.dataset.section; // Get target section ID from data attribute
+
+        // Hide all main sections
+        mainSections.forEach(section => {
+            section.classList.add('hidden');
+        });
+
+        // Show the target section
+        const targetSection = document.getElementById(sectionId);
+        if (targetSection) {
+            targetSection.classList.remove('hidden');
+            console.log(`Navigating to section: #${sectionId}`);
+        } else {
+            console.warn(`Target section not found: #${sectionId}`);
+            // Show a default section like dashboard if target fails?
+            document.getElementById('dashboard-summary')?.classList.remove('hidden');
+        }
+
+        // Close the menu
+        toggleMenu(true); // Force close
+    });
+});
 
 // --- Core Functions ---
 
@@ -228,9 +287,8 @@ async function processBudgetData(data) {
             // Indicate that pending items affect this view
             const budgetTitleSuffix = pendingTransactions.length > 0 ? " (incl. pending)" : "";
             renderBudgetTable(budgetViewData.rows, budgetViewData.totals, latestMonth, budgetTitleSuffix);
-            if (budgetViewSection) budgetViewSection.classList.remove('hidden');
         } else {
-            // (Keep hiding logic)
+            // Hide if no data
             if (budgetViewSection) budgetViewSection.classList.add('hidden');
         }
 
@@ -249,28 +307,36 @@ async function processBudgetData(data) {
             if (chartData && chartData.labels.length > 0) {
                  if (chartMonthDisplaySpan) chartMonthDisplaySpan.textContent = latestMonth;
                 renderSpendingChart(chartData);
-                if (chartNoDataMsg) chartNoDataMsg.classList.add('hidden');
-                if (chartsSection) chartsSection.classList.remove('hidden'); // Show charts section
             } else {
-                 console.warn(`No positive spending data found for chart in ${latestMonth}.`);
-                 // Hide chart section or show 'no data' message
-                 if (spendingPieChartInstance) { spendingPieChartInstance.destroy(); spendingPieChartInstance = null; } // Clear old chart
-                 if (chartNoDataMsg) chartNoDataMsg.classList.remove('hidden');
-                 if (chartsSection) chartsSection.classList.remove('hidden'); // Keep section visible to show message
-                 if (spendingChartCanvas.parentElement) spendingChartCanvas.parentElement.style.display = 'none'; // Hide canvas container
+                // Hide chart elements if no data
+                if (spendingPieChartInstance) { spendingPieChartInstance.destroy(); spendingPieChartInstance = null; }
+                if (chartNoDataMsg) chartNoDataMsg.classList.remove('hidden'); // Show no data msg
+                if (spendingChartCanvas.parentElement) spendingChartCanvas.parentElement.style.display = 'none';
             }
         } else {
-            console.warn("Spending chart skipped: Missing latestMonth or canvas element.");
-            if (chartsSection) chartsSection.classList.add('hidden'); // Hide section if no month
+            // Hide if no month/canvas
+            if (chartsSection) chartsSection.classList.add('hidden');
         }
 
-        // --- Show other sections ---
-        showDataSections(); // General function if needed
-        if (addExpenseFormSection) addExpenseFormSection.classList.remove('hidden');
-        if (syncSection) syncSection.classList.remove('hidden');
-        updateStatus(`Data from file displayed successfully. ${pendingTransactions.length} pending entries loaded.`, "success");
+        // *** Initial Section Visibility ***
+        // Ensure all sections are hidden initially except the file loader and the default view (e.g., dashboard)
+        mainSections.forEach(section => {
+            if (section.id !== 'dashboard-summary') { // Keep only dashboard visible initially
+                section.id !== 'file-loader' && section.classList.add('hidden'); // Also keep file loader visible initially maybe? Or hide it too? Let's hide others.
+            } else {
+                 section.classList.remove('hidden'); // Make sure default is visible
+            }
+        });
+        // Show sections needed *after* load (add form, sync) - Nav will handle others
+         if (addExpenseFormSection) addExpenseFormSection.classList.add('hidden'); // Start hidden
+         if (syncSection) syncSection.classList.add('hidden'); // Start hidden
+         // Let nav links show these when clicked
+
+
+        updateStatus(`Data ready. Select a view from the menu.`, "success"); // Update status
 
     } catch (uiError) {
+        // (Keep error handling)
         console.error("Error updating UI:", uiError);
         updateStatus(`Error displaying data: ${uiError.message}`, "error");
     }
@@ -1400,11 +1466,6 @@ function hideDataSections() {
     if(transactionsSection) transactionsSection.classList.add('hidden');
 }
 
-/** Shows the main data sections. */
-function showDataSections() {
-    if(dashboardSection) dashboardSection.classList.remove('hidden');
-    if(transactionsSection) transactionsSection.classList.remove('hidden');
-}
 /**
  * Filters the displayed transaction rows based on current filter inputs.
  */
