@@ -1267,7 +1267,7 @@ async function handleExportData() {
         a.href = url;
         // Create a filename with a timestamp for clarity
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-'); // YYYY-MM-DDTHH-MM-SS-mmmZ
-        a.download = `budget_data_updated_${timestamp}.json`;
+        a.download = `budget_data_${new Date().toISOString().slice(0,10)}.json`;
         document.body.appendChild(a); // Link needs to be in the document to be clicked programmatically
         a.click(); // Simulate a click to trigger download
 
