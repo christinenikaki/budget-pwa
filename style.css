@@ -287,3 +287,63 @@ footer {
 #no-results-message {
      color: #6c757d; /* Gray text */
 }
+
+/* --- Styles for Budget View --- */
+#budget-view h2 { /* Style if needed, similar to other card headers */
+    margin-top: 0;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+    font-size: 1.3em;
+    color: #495057;
+}
+
+#budget-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+}
+
+#budget-table th,
+#budget-table td {
+    border: 1px solid #ddd;
+    padding: 8px 10px; /* Adjust padding as needed */
+    text-align: left;
+    vertical-align: middle; /* Align vertically in the middle */
+}
+
+#budget-table thead th {
+    background-color: #e9ecef;
+}
+
+/* Ensure right-alignment for currency columns */
+#budget-table th.currency,
+#budget-table td.currency {
+    text-align: right;
+}
+
+#budget-table tbody tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+
+/* Style for the totals footer row */
+#budget-table tfoot tr {
+    font-weight: bold;
+    background-color: #e9ecef;
+    border-top: 2px solid #ccc; /* More distinct separator */
+}
+
+#budget-table tfoot th {
+    text-align: left;
+}
+
+/* Style for savings goal rows */
+#budget-tbody tr.savings-goal-row td {
+    background-color: #e0f2f7;
+    font-style: italic;
+    color: #0c5460; /* Teal color */
+}
+
+#budget-no-data {
+     color: #6c757d; /* Gray text */
+}

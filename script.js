@@ -44,6 +44,19 @@ const exportStatusDiv = document.getElementById('export-status');
 // --- Global variable to hold original loaded data ---
 let originalBudgetData = null; // Store the initially loaded data
 
+const budgetViewSection = document.getElementById('budget-view');
+const budgetViewMonthSpan = document.getElementById('budget-view-month');
+const budgetTbody = document.getElementById('budget-tbody');
+const totalBudgetedValueTd = document.getElementById('total-budgeted-value');
+const totalSpentValueTd = document.getElementById('total-spent-value');
+const totalAvailableValueTd = document.getElementById('total-available-value');
+const budgetNoDataMsg = document.getElementById('budget-no-data');
+// --- Define Constants ---
+const UNKNOWN_INCOME_SOURCE = "Unknown Income Source";
+const UNCATEGORIZED = "Uncategorized";
+const SAVINGS_GROUP_NAME = "Savings Goals";
+const ARCHIVED_GROUP_NAME = "Archived";
+
 
 /**
  * Initializes the IndexedDB database.
@@ -165,68 +178,66 @@ function handleFileSelect(event) {
 
 /**
  * Processes the parsed budget data and updates the UI.
+ * Stores original data and loads pending transactions.
  * @param {object} data The parsed JSON data object.
  */
 async function processBudgetData(data) {
-    // --- Basic Data Validation ---
-    if (typeof data !== 'object' || data === null) {
-         updateStatus("Error: Invalid data format (not an object).", "error");
-         return;
-    }
-    if (!data.accounts || typeof data.accounts !== 'object') {
-        updateStatus("Error: Missing or invalid 'accounts' data.", "error");
-        return;
-    }
-    if (!data.transactions || !Array.isArray(data.transactions)) {
-        updateStatus("Error: Missing or invalid 'transactions' data.", "error");
-        return;
-    }
-    if (typeof data.ready_to_assign !== 'number') {
-         // Allow 0, so check specifically for number type
-        updateStatus("Error: Missing or invalid 'ready_to_assign' data.", "error");
-        return;
-    }
-    // *** Store the original data ***
-    originalBudgetData = JSON.parse(JSON.stringify(data)); // Deep copy
+    // (Keep validation and originalBudgetData assignment)
+    originalBudgetData = JSON.parse(JSON.stringify(data));
 
-    // --- Update UI Sections ---
     try {
-        // Populate filters FIRST, including the new form dropdowns
-        populateAccountFilter(data.accounts, [filterAccountSelect, txAccountSelect]); // Pass both selects
-        populateCategoryFilter(data.categories, data.transactions, [filterCategorySelect, txCategorySelect]); // Pass both selects
+        // Populate filters and add-form dropdowns
+        populateAccountFilter(data.accounts, [filterAccountSelect, txAccountSelect]);
+        populateCategoryFilter(data.categories, data.transactions, [filterCategorySelect, txCategorySelect]);
 
-        // Load pending transactions from DB
         const pendingTransactions = await loadPendingTransactions();
         updatePendingCountUI(pendingTransactions.length);
 
-        // Combine original and pending for initial display
-        const allTransactionsForDisplay = [...data.transactions, ...pendingTransactions];
+        // Combine *original* transactions for period/budget calculations
+        // Pending transactions are NOT usually included in budget calculations directly,
+        // they primarily affect account balances. Let's use original only for budget view.
+        const originalTransactions = data.transactions || [];
 
-        const latestMonth = findLatestMonth(allTransactionsForDisplay); // Use combined for latest month calc
-        let monthSummary = { latestMonth: latestMonth, income: 0, spending: 0 };
-        if (latestMonth) {
-            // Calculate summary based on COMBINED data for display consistency
-            monthSummary = {
-                latestMonth: latestMonth,
-                ...calculatePeriodSummary(latestMonth, allTransactionsForDisplay) // Use combined data
-            };
-        }
+        const latestMonth = findLatestMonth(originalTransactions);
+
+        // --- Display Dashboard Summary (using combined data for consistency?) ---
+        // Decide if dashboard summary should reflect pending or not.
+        // Let's keep it reflecting pending for immediate feedback.
+         const allTransactionsForDisplay = [...originalTransactions, ...pendingTransactions];
+         let monthSummary = { latestMonth: latestMonth || 'N/A', income: 0, spending: 0 };
+         if (latestMonth) {
+             monthSummary = {
+                 latestMonth: latestMonth,
+                 ...calculatePeriodSummary(latestMonth, allTransactionsForDisplay) // Use combined
+             };
+         }
         displayDashboardSummary(monthSummary);
+        displayAccountBalances(data.accounts); // Show original balances
+        displayRTA(data.ready_to_assign); // Show original RTA
+        displayTransactions(originalTransactions, pendingTransactions); // Show combined transactions list
+        resetAllFilters();
 
-        // Display account balances based on ORIGINAL data (or recalc after merge later)
-        // Let's stick to original for now, export will recalculate true final balance
-        displayAccountBalances(data.accounts);
-        displayRTA(data.ready_to_assign);
+        // --- Calculate and Display Budget View ---
+        if (latestMonth && data.categories && data.budget_periods) {
+            console.log(`Calculating budget view for: ${latestMonth}`);
+            const budgetViewData = calculateBudgetViewData(
+                latestMonth,
+                data.categories,
+                data.budget_periods,
+                originalTransactions, // Use ONLY original transactions for budget calcs
+                data.category_groups || {}
+            );
+            renderBudgetTable(budgetViewData.rows, budgetViewData.totals, latestMonth);
+            if (budgetViewSection) budgetViewSection.classList.remove('hidden'); // Show budget section
+        } else {
+            console.warn("Budget view skipped: Missing latestMonth, categories, or budget_periods data.");
+            if (budgetViewSection) budgetViewSection.classList.add('hidden'); // Ensure it's hidden
+        }
 
-        // Display transactions (original + pending)
-        displayTransactions(data.transactions, pendingTransactions);
-
-        resetAllFilters(); // Reset filters for the combined list
-
-        // Show the data sections now that they are populated
-        showDataSections(); // Keep this
-        if (addExpenseFormSection) addExpenseFormSection.classList.remove('hidden'); // Show add form
-        if (syncSection) syncSection.classList.remove('hidden'); // Show sync section
+        // --- Show other sections ---
+        showDataSections(); // General function if needed
+        if (addExpenseFormSection) addExpenseFormSection.classList.remove('hidden');
+        if (syncSection) syncSection.classList.remove('hidden');
         updateStatus(`Data from file displayed successfully. ${pendingTransactions.length} pending entries loaded.`, "success");
 
     } catch (uiError) {
@@ -234,6 +245,249 @@ async function processBudgetData(data) {
         updateStatus(`Error displaying data: ${uiError.message}`, "error");
     }
 }
+
+// --- NEW Budget Calculation Helper Functions ---
+
+/**
+ * Gets the previous month's period string (YYYY-MM).
+ * @param {string} periodStr The current period (YYYY-MM).
+ * @returns {string|null} The previous period string or null if input is invalid.
+ */
+function getPreviousPeriodJS(periodStr) {
+    if (!periodStr || !/^\d{4}-\d{2}$/.test(periodStr)) {
+        return null;
+    }
+    try {
+        const [year, month] = periodStr.split('-').map(Number);
+        // Create a date object for the first of the current month
+        const currentDate = new Date(year, month - 1, 1); // month is 0-indexed
+        // Subtract one day to get to the last day of the previous month
+        currentDate.setDate(currentDate.getDate() - 1);
+        // Format the resulting date
+        const prevYear = currentDate.getFullYear();
+        const prevMonth = (currentDate.getMonth() + 1).toString().padStart(2, '0'); // month + 1, pad with zero
+        return `${prevYear}-${prevMonth}`;
+    } catch (e) {
+        console.error("Error getting previous period:", e);
+        return null;
+    }
+}
+
+/**
+ * Calculates NET spending for a specific category within a specific period.
+ * Mirrors Python's calculate_category_spending (basic version).
+ * @param {string} period The period prefix (YYYY-MM).
+ * @param {string} categoryName The category to calculate spending for.
+ * @param {Array} transactions The list of transactions to check.
+ * @returns {number} The net spending amount for that category in that period.
+ */
+function calculateCategorySpendingJS(period, categoryName, transactions) {
+    let netSpent = 0.0;
+    if (!period || !categoryName || !transactions) {
+        return 0.0;
+    }
+
+    transactions.forEach(tx => {
+        // Check category, date, and type
+        if (tx.category === categoryName &&
+            tx.date && tx.date.startsWith(period) &&
+            (tx.type === 'expense' || tx.type === 'refund'))
+        {
+            try {
+                const amount = parseFloat(tx.amount || 0);
+                 if (isNaN(amount)) return; // Skip invalid amounts
+
+                if (tx.type === 'expense') {
+                    netSpent += amount;
+                } else if (tx.type === 'refund') {
+                    netSpent -= amount;
+                }
+            } catch (e) {
+                 console.warn(`Error parsing amount during category spending calc: ${e}`, tx);
+            }
+        }
+    });
+    return netSpent;
+}
+
+// --- NEW Main Budget View Calculation Function ---
+
+/**
+ * Calculates the data needed for the budget view table for a specific period.
+ * Mirrors Python's get_budget_display_data logic.
+ * @param {string} period The target period (YYYY-MM).
+ * @param {Array} categories List of all category names.
+ * @param {object} budgetPeriodsData Budget data { "YYYY-MM": { "Category": Amount } }.
+ * @param {Array} transactions List of transactions (use original, not pending).
+ * @param {object} groupsData Category groups mapping { "Category": "Group Name" }.
+ * @returns {{rows: Array<object>, totals: {budgeted: number, spent: number, available: number}}}
+ */
+function calculateBudgetViewData(period, categories = [], budgetPeriodsData = {}, transactions = [], groupsData = {}) {
+    const budgetRows = [];
+    let totalBudgeted = 0.0;
+    let totalSpent = 0.0; // Activity total
+    let totalAvailable = 0.0; // Running total available
+
+    // Exclude internal/special categories and sort
+    let displayCategories = categories.filter(c => c !== UNKNOWN_INCOME_SOURCE);
+    displayCategories.sort();
+    // Ensure Uncategorized is last if present
+    if (displayCategories.includes(UNCATEGORIZED)) {
+        displayCategories = displayCategories.filter(c => c !== UNCATEGORIZED);
+        displayCategories.push(UNCATEGORIZED);
+    }
+
+    const periodBudget = budgetPeriodsData[period] || {};
+    const previousPeriod = getPreviousPeriodJS(period);
+    const previousPeriodBudget = previousPeriod ? (budgetPeriodsData[previousPeriod] || {}) : {};
+
+    console.log(`Budget Data for ${period}:`, periodBudget);
+    console.log(`Previous Period: ${previousPeriod}`);
+
+    displayCategories.forEach(cat => {
+        const group = groupsData[cat];
+        const isArchived = group === ARCHIVED_GROUP_NAME;
+        const isSavingsGoal = group === SAVINGS_GROUP_NAME;
+
+        // *** Skip Archived Categories *** (Simplified: Always skip for now)
+        if (isArchived) {
+            console.log(`Skipping archived category: ${cat}`);
+            return; // continue to next category
+        }
+
+        const budgeted = periodBudget[cat] || 0.0;
+        const spent = calculateCategorySpendingJS(period, cat, transactions);
+
+        let prevAvailable = 0.0;
+        if (previousPeriod) {
+            const prevBudgeted = previousPeriodBudget[cat] || 0.0;
+            const prevSpent = calculateCategorySpendingJS(previousPeriod, cat, transactions);
+            prevAvailable = prevBudgeted - prevSpent;
+        }
+
+        const available = prevAvailable + budgeted - spent;
+
+        budgetRows.push({
+            name: cat,
+            prev_avail: prevAvailable,
+            budgeted: budgeted,
+            spent: spent, // This is 'Activity'
+            available: available,
+            is_savings_goal: isSavingsGoal
+            // is_archived: isArchived // We filter out archived above
+        });
+
+        // Accumulate totals (only for non-archived rows)
+        totalBudgeted += budgeted;
+        totalSpent += spent;
+        // Total available is calculated cumulatively at the end from totals
+    });
+
+    totalAvailable = (budgetRows.reduce((sum, row) => sum + row.prev_avail, 0)) + totalBudgeted - totalSpent;
+    // Alt check: Sum of individual 'available' amounts should match:
+    // const sumAvailable = budgetRows.reduce((sum, row) => sum + row.available, 0);
+    // console.log("Check Total Available:", totalAvailable, "vs Sum:", sumAvailable);
+
+    return {
+        rows: budgetRows,
+        totals: {
+            budgeted: totalBudgeted,
+            spent: totalSpent,
+            available: totalAvailable
+        }
+    };
+}
+
+// --- NEW Budget Table Rendering Function ---
+
+/**
+ * Renders the calculated budget data into the HTML table.
+ * @param {Array<object>} budgetRows Array of row data objects.
+ * @param {{budgeted: number, spent: number, available: number}} totals Calculated totals.
+ * @param {string} period The period being displayed (YYYY-MM).
+ */
+function renderBudgetTable(budgetRows, totals, period) {
+    // Clear previous content
+    if (budgetTbody) budgetTbody.innerHTML = '';
+    if (budgetViewMonthSpan) budgetViewMonthSpan.textContent = period || '--';
+
+    // Clear totals
+    if (totalBudgetedValueTd) totalBudgetedValueTd.textContent = '--';
+    if (totalSpentValueTd) totalSpentValueTd.textContent = '--';
+    if (totalAvailableValueTd) totalAvailableValueTd.textContent = '--';
+    if (budgetNoDataMsg) budgetNoDataMsg.classList.add('hidden');
+
+    if (!budgetTbody || !budgetRows || budgetRows.length === 0) {
+         if (budgetNoDataMsg) budgetNoDataMsg.classList.remove('hidden');
+        console.warn("No budget rows to render for period:", period);
+        return;
+    }
+
+    budgetRows.forEach(row => {
+        const tr = budgetTbody.insertRow();
+        if (row.is_savings_goal) {
+            tr.classList.add('savings-goal-row'); // Add class for styling
+        }
+
+        const cellCat = tr.insertCell();
+        cellCat.textContent = row.name;
+
+        const cellPrevAvail = tr.insertCell();
+        cellPrevAvail.textContent = formatCurrency(row.prev_avail);
+        cellPrevAvail.className = `currency ${getCurrencyClass(row.prev_avail)}`;
+
+        const cellBudgeted = tr.insertCell();
+        cellBudgeted.textContent = formatCurrency(row.budgeted);
+         // Budgeted usually not colored, unless maybe 0?
+         cellBudgeted.className = `currency ${getCurrencyClass(row.budgeted, true)}`; // Pass true to allow positive color
+
+        const cellSpent = tr.insertCell(); // Activity
+        cellSpent.textContent = formatCurrency(row.spent);
+        // Spending is "negative" impact, show red if > 0, green if negative (refunds > expenses)
+        cellSpent.className = `currency ${row.spent > 0 ? 'negative-currency' : (row.spent < 0 ? 'positive-currency' : 'zero-currency')}`;
+
+
+        const cellAvailable = tr.insertCell();
+        cellAvailable.textContent = formatCurrency(row.available);
+        cellAvailable.className = `currency ${getCurrencyClass(row.available)}`;
+    });
+
+    // Populate totals
+    if (totalBudgetedValueTd) {
+        totalBudgetedValueTd.textContent = formatCurrency(totals.budgeted);
+        totalBudgetedValueTd.className = `currency ${getCurrencyClass(totals.budgeted, true)}`;
+    }
+    if (totalSpentValueTd) {
+        totalSpentValueTd.textContent = formatCurrency(totals.spent);
+         totalSpentValueTd.className = `currency ${totals.spent > 0 ? 'negative-currency' : (totals.spent < 0 ? 'positive-currency' : 'zero-currency')}`;
+    }
+    if (totalAvailableValueTd) {
+        totalAvailableValueTd.textContent = formatCurrency(totals.available);
+        totalAvailableValueTd.className = `currency ${getCurrencyClass(totals.available)}`;
+    }
+}
+
+/**
+ * Helper to get the appropriate CSS class for currency values.
+ * @param {number} amount The amount.
+ * @param {boolean} allowPositive Set to true if positive values should get 'positive-currency' class.
+ * @returns {string} CSS class name ('positive-currency', 'negative-currency', or 'zero-currency').
+ */
+function getCurrencyClass(amount, allowPositive = false) {
+    // Use a small tolerance for zero checks
+    const tolerance = 0.005;
+   if (amount < -tolerance) {
+       return 'negative-currency';
+   } else if (amount > tolerance && allowPositive) {
+       return 'positive-currency';
+   } else if (amount > tolerance && !allowPositive) {
+        return ''; // Standard positive numbers often don't need a specific class unless requested
+   }
+   else {
+       return 'zero-currency';
+   }
+}
+
 /**
 * Finds the latest month (YYYY-MM) present in the transaction data.
  * @param {Array} transactions The transactions array.

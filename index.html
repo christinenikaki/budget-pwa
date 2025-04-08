@@ -50,6 +50,36 @@
                 </div>
             </div>
         </section>
+        <!-- === BUDGET VIEW SECTION === -->
+        <section id="budget-view" class="card hidden">
+            <h2>Budget for <span id="budget-view-month">--</span></h2>
+            <table id="budget-table">
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th class="currency">Prev. Available</th>
+                        <th class="currency">Budgeted</th>
+                        <th class="currency">Activity</th>
+                        <th class="currency">Available</th>
+                    </tr>
+                </thead>
+                <tbody id="budget-tbody">
+                    <!-- Budget rows populated by JS -->
+                    <tr><td colspan="5">Loading budget data...</td></tr>
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <th>Totals</th>
+                        <td class="currency"></td> <!-- Prev Avail total not typically shown -->
+                        <td class="currency"><strong id="total-budgeted-value">--</strong></td>
+                        <td class="currency"><strong id="total-spent-value">--</strong></td>
+                        <td class="currency"><strong id="total-available-value">--</strong></td>
+                    </tr>
+                </tfoot>
+            </table>
+             <p id="budget-no-data" class="hidden" style="text-align: center; margin-top: 15px; font-style: italic;">No budget data available for this period.</p>
+        </section>
+        <!-- === END BUDGET VIEW SECTION === -->
         <section id="add-expense-form" class="card hidden"> <!-- Hide initially -->
             <h2>Add New Expense/Income</h2>
             <form id="new-tx-form">
