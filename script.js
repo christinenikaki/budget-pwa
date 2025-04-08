@@ -199,7 +199,7 @@ async function processBudgetData(data) {
         const originalTransactions = data.transactions || [];
         const allTransactionsForDisplay = [...originalTransactions, ...pendingTransactions];
 
-        const latestMonth = findLatestMonth(originalTransactions); // Base calculations on original data month
+        const latestMonth = findLatestMonth(originalTransactions) || findLatestMonth(pendingTransactions);
 
          // --- Display Dashboard Summary ---
          let monthSummary = { latestMonth: latestMonth || 'N/A', income: 0, spending: 0 };
@@ -222,14 +222,16 @@ async function processBudgetData(data) {
                 latestMonth,
                 data.categories,
                 data.budget_periods,
-                originalTransactions, // Use ONLY original transactions for budget calcs
+                allTransactionsForDisplay, // Use combined transactions for budget calcs
                 data.category_groups || {}
             );
-            renderBudgetTable(budgetViewData.rows, budgetViewData.totals, latestMonth);
-            if (budgetViewSection) budgetViewSection.classList.remove('hidden'); // Show budget section
+            // Indicate that pending items affect this view
+            const budgetTitleSuffix = pendingTransactions.length > 0 ? " (incl. pending)" : "";
+            renderBudgetTable(budgetViewData.rows, budgetViewData.totals, latestMonth, budgetTitleSuffix);
+            if (budgetViewSection) budgetViewSection.classList.remove('hidden');
         } else {
-            console.warn("Budget view skipped: Missing latestMonth, categories, or budget_periods data.");
-            if (budgetViewSection) budgetViewSection.classList.add('hidden'); // Ensure it's hidden
+            // (Keep hiding logic)
+            if (budgetViewSection) budgetViewSection.classList.add('hidden');
         }
 
         // --- Calculate and Display Spending Chart ---
@@ -237,9 +239,12 @@ async function processBudgetData(data) {
             console.log(`Calculating spending chart data for: ${latestMonth}`);
             const chartData = calculateSpendingBreakdown(
                 latestMonth,
-                originalTransactions, // Use original transactions for chart data
+                allTransactionsForDisplay, // Use all of the transactions for chart data
                 data.category_groups || {}
             );
+            // Indicate that pending items affect this view
+            const chartTitleSuffix = pendingTransactions.length > 0 ? " (incl. pending)" : "";
+            if (chartMonthDisplaySpan) chartMonthDisplaySpan.textContent = latestMonth + chartTitleSuffix;
 
             if (chartData && chartData.labels.length > 0) {
                  if (chartMonthDisplaySpan) chartMonthDisplaySpan.textContent = latestMonth;
@@ -430,11 +435,12 @@ function calculateBudgetViewData(period, categories = [], budgetPeriodsData = {}
  * @param {Array<object>} budgetRows Array of row data objects.
  * @param {{budgeted: number, spent: number, available: number}} totals Calculated totals.
  * @param {string} period The period being displayed (YYYY-MM).
+ * @param {string} titleSuffix Optional suffix for the title (e.g., " (incl. pending)").
  */
-function renderBudgetTable(budgetRows, totals, period) {
+function renderBudgetTable(budgetRows, totals, period, titleSuffix = "") {
     // Clear previous content
     if (budgetTbody) budgetTbody.innerHTML = '';
-    if (budgetViewMonthSpan) budgetViewMonthSpan.textContent = period || '--';
+    if (budgetViewMonthSpan) budgetViewMonthSpan.textContent = (period || '--') + titleSuffix;
 
     // Clear totals
     if (totalBudgetedValueTd) totalBudgetedValueTd.textContent = '--';
@@ -861,11 +867,11 @@ function displayTransactions(originalTransactions = [], pendingTransactions = []
 
         switch (txType) {
             case 'income':
-                iconClass = 'fa-arrow-up';
+                iconClass = 'fa-arrow-down';
                 icon.style.color = '#28a745'; // Green
                 break;
             case 'expense':
-                iconClass = 'fa-arrow-down';
+                iconClass = 'fa-arrow-up';
                 icon.style.color = '#dc3545'; // Red
                 break;
             case 'refund':
