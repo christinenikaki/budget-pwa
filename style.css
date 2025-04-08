@@ -91,6 +91,15 @@ header {
     background-color: #555;
     color: #fff;
 }
+.side-menu li a.nav-link.active-link {
+    background-color: #0056b3; /* Example: A distinct blue background */
+    color: #ffffff;
+    font-weight: bold; /* Make text bold */
+}
+
+.side-menu li a.nav-link.active-link:hover {
+    background-color: #004a99; /* Slightly darker blue on hover */
+}
 
 .menu-close-button {
     position: absolute;
@@ -497,9 +506,35 @@ footer {
     .table-responsive-wrapper {
         width: 100%; /* Ensure wrapper takes full width of its container */
         overflow-x: auto; /* Enable horizontal scrolling ONLY when needed */
+        overflow-y: auto;
+        max-height: 65vh; /* ADD a max height - Adjust as needed (e.g., 500px, 70vh) */
         -webkit-overflow-scrolling: touch; /* Improves scrolling feel on iOS */
         border: 1px solid #eee; /* Optional: subtle border to indicate scroll area */
         margin-bottom: 1em; /* Add some space below the scrolling table */
+        position: relative; /* Good practice for positioning children */
+    }
+    
+    /* Style the table headers */
+    #transactions-table thead th,
+    #budget-table thead th {
+        position: -webkit-sticky; /* Safari */
+        position: sticky;
+        top: 0; /* Stick to the top of the scrolling container (.table-responsive-wrapper) */
+        z-index: 10; /* Ensure header is above table body content */
+        /* background-color is already set to #e9ecef, which is good */
+    }
+
+    /* Style the table footers (if desired) */
+    #transactions-table tfoot td,
+    #transactions-table tfoot th, /* If using th in tfoot */
+    #budget-table tfoot td,
+    #budget-table tfoot th { /* If using th in tfoot */
+        position: -webkit-sticky; /* Safari */
+        position: sticky;
+        bottom: 0; /* Stick to the bottom of the scrolling container */
+        z-index: 10; /* Ensure footer is above table body content */
+        /* background-color is already set (e.g. #e9ecef), which is good */
+        /* Ensure footer background matches header or is distinct */
     }
 
     /* Ensure the table inside uses available width but can grow */

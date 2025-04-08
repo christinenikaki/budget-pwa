@@ -167,6 +167,18 @@ navLinks.forEach(link => {
         event.preventDefault(); // Stop default link behavior
         const sectionId = link.dataset.section; // Get target section ID from data attribute
 
+        // 1. Remove 'active-link' from ALL navigation links first
+        navLinks.forEach(nav => {
+            nav.classList.remove('active-link');
+            // Also remove aria-current for accessibility
+            nav.removeAttribute('aria-current');
+        });
+
+        // 2. Add 'active-link' to the CURRENTLY clicked link
+        link.classList.add('active-link');
+        // Add aria-current="page" for better accessibility
+        link.setAttribute('aria-current', 'page');
+
         // Hide all main sections
         mainSections.forEach(section => {
             section.classList.add('hidden');
@@ -180,7 +192,16 @@ navLinks.forEach(link => {
         } else {
             console.warn(`Target section not found: #${sectionId}`);
             // Show a default section like dashboard if target fails?
-            document.getElementById('dashboard-summary')?.classList.remove('hidden');
+            const fallbackSection = document.getElementById('dashboard-summary');
+            if (fallbackSection) {
+                fallbackSection.classList.remove('hidden');
+                // If falling back, make the corresponding link active
+                document.querySelector('.nav-link[data-section="dashboard-summary"]')?.classList.add('active-link');
+                document.querySelector('.nav-link[data-section="dashboard-summary"]')?.setAttribute('aria-current', 'page');
+                // And remove active state from the link that failed
+                link.classList.remove('active-link');
+                link.removeAttribute('aria-current');
+            }
         }
 
         // Close the menu
