@@ -19,9 +19,6 @@ const filterStartDateInput = document.getElementById('filter-start-date');
 const filterEndDateInput = document.getElementById('filter-end-date');
 const resetFiltersButton = document.getElementById('reset-filters');
 const noResultsMessage = document.getElementById('no-results-message');
-const DB_NAME = 'budgetAppDB';
-const DB_VERSION = 1; // Increment if you change the schema later
-const PENDING_TX_STORE_NAME = 'pendingTransactions';
 let db; // Variable to hold the database instance
 
 const addExpenseFormSection = document.getElementById('add-expense-form');
@@ -40,8 +37,6 @@ const pendingCountSpan = document.getElementById('pending-count');
 const exportDataButton = document.getElementById('export-data-button');
 const clearPendingButton = document.getElementById('clear-pending-button');
 const exportStatusDiv = document.getElementById('export-status');
-
-// --- Global variable to hold original loaded data ---
 let originalBudgetData = null; // Store the initially loaded data
 
 const budgetViewSection = document.getElementById('budget-view');
@@ -51,7 +46,17 @@ const totalBudgetedValueTd = document.getElementById('total-budgeted-value');
 const totalSpentValueTd = document.getElementById('total-spent-value');
 const totalAvailableValueTd = document.getElementById('total-available-value');
 const budgetNoDataMsg = document.getElementById('budget-no-data');
+
+const chartsSection = document.getElementById('charts-section');
+const spendingChartCanvas = document.getElementById('spendingPieChart');
+const chartMonthDisplaySpan = document.getElementById('chart-month-display');
+const chartNoDataMsg = document.getElementById('chart-no-data');
+let spendingPieChartInstance = null; // To destroy previous chart before rendering new one
+
 // --- Define Constants ---
+const DB_NAME = 'budgetAppDB';
+const DB_VERSION = 1; // Increment if you change the schema later
+const PENDING_TX_STORE_NAME = 'pendingTransactions';
 const UNKNOWN_INCOME_SOURCE = "Unknown Income Source";
 const UNCATEGORIZED = "Uncategorized";
 const SAVINGS_GROUP_NAME = "Savings Goals";
@@ -186,24 +191,17 @@ async function processBudgetData(data) {
     originalBudgetData = JSON.parse(JSON.stringify(data));
 
     try {
-        // Populate filters and add-form dropdowns
+        // (Keep filter population, pending transaction loading, etc.)
         populateAccountFilter(data.accounts, [filterAccountSelect, txAccountSelect]);
         populateCategoryFilter(data.categories, data.transactions, [filterCategorySelect, txCategorySelect]);
-
         const pendingTransactions = await loadPendingTransactions();
         updatePendingCountUI(pendingTransactions.length);
-
-        // Combine *original* transactions for period/budget calculations
-        // Pending transactions are NOT usually included in budget calculations directly,
-        // they primarily affect account balances. Let's use original only for budget view.
         const originalTransactions = data.transactions || [];
+        const allTransactionsForDisplay = [...originalTransactions, ...pendingTransactions];
 
-        const latestMonth = findLatestMonth(originalTransactions);
+        const latestMonth = findLatestMonth(originalTransactions); // Base calculations on original data month
 
-        // --- Display Dashboard Summary (using combined data for consistency?) ---
-        // Decide if dashboard summary should reflect pending or not.
-        // Let's keep it reflecting pending for immediate feedback.
-         const allTransactionsForDisplay = [...originalTransactions, ...pendingTransactions];
+         // --- Display Dashboard Summary ---
          let monthSummary = { latestMonth: latestMonth || 'N/A', income: 0, spending: 0 };
          if (latestMonth) {
              monthSummary = {
@@ -234,6 +232,33 @@ async function processBudgetData(data) {
             if (budgetViewSection) budgetViewSection.classList.add('hidden'); // Ensure it's hidden
         }
 
+        // --- Calculate and Display Spending Chart ---
+        if (latestMonth && spendingChartCanvas) {
+            console.log(`Calculating spending chart data for: ${latestMonth}`);
+            const chartData = calculateSpendingBreakdown(
+                latestMonth,
+                originalTransactions, // Use original transactions for chart data
+                data.category_groups || {}
+            );
+
+            if (chartData && chartData.labels.length > 0) {
+                 if (chartMonthDisplaySpan) chartMonthDisplaySpan.textContent = latestMonth;
+                renderSpendingChart(chartData);
+                if (chartNoDataMsg) chartNoDataMsg.classList.add('hidden');
+                if (chartsSection) chartsSection.classList.remove('hidden'); // Show charts section
+            } else {
+                 console.warn(`No positive spending data found for chart in ${latestMonth}.`);
+                 // Hide chart section or show 'no data' message
+                 if (spendingPieChartInstance) { spendingPieChartInstance.destroy(); spendingPieChartInstance = null; } // Clear old chart
+                 if (chartNoDataMsg) chartNoDataMsg.classList.remove('hidden');
+                 if (chartsSection) chartsSection.classList.remove('hidden'); // Keep section visible to show message
+                 if (spendingChartCanvas.parentElement) spendingChartCanvas.parentElement.style.display = 'none'; // Hide canvas container
+            }
+        } else {
+            console.warn("Spending chart skipped: Missing latestMonth or canvas element.");
+            if (chartsSection) chartsSection.classList.add('hidden'); // Hide section if no month
+        }
+
         // --- Show other sections ---
         showDataSections(); // General function if needed
         if (addExpenseFormSection) addExpenseFormSection.classList.remove('hidden');
@@ -246,7 +271,7 @@ async function processBudgetData(data) {
     }
 }
 
-// --- NEW Budget Calculation Helper Functions ---
+// --- Budget Calculation Helper Functions ---
 
 /**
  * Gets the previous month's period string (YYYY-MM).
@@ -310,7 +335,7 @@ function calculateCategorySpendingJS(period, categoryName, transactions) {
     return netSpent;
 }
 
-// --- NEW Main Budget View Calculation Function ---
+// --- Main Budget View Calculation Function ---
 
 /**
  * Calculates the data needed for the budget view table for a specific period.
@@ -398,7 +423,7 @@ function calculateBudgetViewData(period, categories = [], budgetPeriodsData = {}
     };
 }
 
-// --- NEW Budget Table Rendering Function ---
+// --- Budget Table Rendering Function ---
 
 /**
  * Renders the calculated budget data into the HTML table.
@@ -465,6 +490,154 @@ function renderBudgetTable(budgetRows, totals, period) {
         totalAvailableValueTd.textContent = formatCurrency(totals.available);
         totalAvailableValueTd.className = `currency ${getCurrencyClass(totals.available)}`;
     }
+}
+
+// --- Chart Data Calculation Function ---
+
+/**
+ * Calculates positive net spending aggregated by category for a pie chart.
+ * Excludes Savings Goals and internal categories.
+ * @param {string} period The target period (YYYY-MM).
+ * @param {Array} transactions List of transactions (use original).
+ * @param {object} groupsData Category groups mapping { "Category": "Group Name" }.
+ * @returns {{labels: Array<string>, data: Array<number>}|null} Object with labels and data arrays, or null if no data.
+ */
+function calculateSpendingBreakdown(period, transactions = [], groupsData = {}) {
+    const spendingByCategory = {}; // { CategoryName: netSpending }
+
+    transactions.forEach(tx => {
+        if (!tx.date || !tx.date.startsWith(period) || tx.type === 'transfer' || tx.type === 'income') {
+            return; // Skip if not in period or not expense/refund
+        }
+
+        const category = tx.category || UNCATEGORIZED; // Default to Uncategorized
+        const group = groupsData[category];
+
+        // Skip Savings Goals and internal categories
+        if (group === SAVINGS_GROUP_NAME || category === UNKNOWN_INCOME_SOURCE) {
+            return;
+        }
+
+        try {
+            const amount = parseFloat(tx.amount || 0);
+            if (isNaN(amount)) return;
+
+            if (!spendingByCategory[category]) {
+                spendingByCategory[category] = 0;
+            }
+
+            if (tx.type === 'expense') {
+                spendingByCategory[category] += amount;
+            } else if (tx.type === 'refund') {
+                spendingByCategory[category] -= amount;
+            }
+        } catch (e) {
+            console.warn(`Error parsing amount during spending breakdown calc: ${e}`, tx);
+        }
+    });
+
+    // Filter out categories with zero or negative net spending, sort by amount desc
+    const spendingEntries = Object.entries(spendingByCategory)
+        .filter(([cat, amount]) => amount > 0.005) // Keep only positive net spending
+        .sort(([, amountA], [, amountB]) => amountB - amountA); // Sort descending
+
+    if (spendingEntries.length === 0) {
+        return null; // No data for the chart
+    }
+
+    // Optional: Group small slices into "Other"
+    const threshold = 0.03; // Example: Group slices less than 3% of total
+    const totalSpending = spendingEntries.reduce((sum, [, amount]) => sum + amount, 0);
+    let otherAmount = 0;
+    const finalEntries = [];
+
+    spendingEntries.forEach(([cat, amount]) => {
+        if (amount / totalSpending < threshold && spendingEntries.length > 5) { // Only group if there are enough slices
+            otherAmount += amount;
+        } else {
+            finalEntries.push([cat, amount]);
+        }
+    });
+
+    if (otherAmount > 0.005) {
+        finalEntries.push(["Other", otherAmount]);
+    }
+
+    // Prepare data for Chart.js
+    const labels = finalEntries.map(([cat]) => cat);
+    const data = finalEntries.map(([, amount]) => amount);
+
+    return { labels, data };
+}
+
+// --- Chart Rendering Function ---
+
+/**
+ * Renders the spending pie chart using Chart.js.
+ * @param {{labels: Array<string>, data: Array<number>}} chartData Object with labels and data arrays.
+ */
+function renderSpendingChart(chartData) {
+    if (!spendingChartCanvas || !chartData) {
+        console.error("Cannot render chart: Canvas not found or no data.");
+        return;
+    }
+     if (spendingChartCanvas.parentElement) spendingChartCanvas.parentElement.style.display = 'block'; // Ensure container is visible
+
+
+    // Destroy previous chart instance if it exists
+    if (spendingPieChartInstance) {
+        spendingPieChartInstance.destroy();
+         console.log("Destroyed previous chart instance.");
+    }
+
+    const ctx = spendingChartCanvas.getContext('2d');
+    spendingPieChartInstance = new Chart(ctx, {
+        type: 'pie', // or 'doughnut'
+        data: {
+            labels: chartData.labels,
+            datasets: [{
+                label: 'Spending',
+                data: chartData.data,
+                // Chart.js provides default colors, or you can define your own array:
+                // backgroundColor: ['#dc3545', '#fd7e14', '#ffc107', '#28a745', '#20c997', '#17a2b8', '#007bff', '#6f42c1', '#e83e8c'],
+                 borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false, // Allow canvas resizing based on container
+            plugins: {
+                legend: {
+                    position: 'top', // Or 'bottom', 'left', 'right'
+                },
+                tooltip: {
+                    callbacks: {
+                         // Format tooltip to show currency and percentage
+                         label: function(context) {
+                            let label = context.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            const value = context.parsed || 0;
+                            label += formatCurrency(value); // Add formatted currency
+
+                            // Calculate percentage
+                            const total = context.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                            const percentage = total > 0 ? ((value / total) * 100).toFixed(1) + '%' : '0.0%';
+                            label += ` (${percentage})`;
+
+                            return label;
+                        }
+                    }
+                },
+                title: { // Optional chart title within the canvas area
+                    display: false, // Already have h2 above
+                    // text: `Spending Breakdown for ${latestMonth}` // Use variable if needed
+                }
+            }
+        }
+    });
+    console.log("Rendered new spending chart.");
 }
 
 /**

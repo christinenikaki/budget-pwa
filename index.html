@@ -4,10 +4,11 @@
     <meta charset="UTF-8">
     <!-- Responsive viewport tag -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zero Budget</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
     <!-- Link to your CSS file -->
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
-    <title>Zero Budget PWA</title>
     <!-- Defer script loading until HTML is parsed -->
     <script src="script.js" defer></script>
 </head>
@@ -50,6 +51,14 @@
                 </div>
             </div>
         </section>
+        <!-- === CHART SECTION === -->
+        <section id="charts-section" class="card hidden">
+            <h2>Spending Breakdown (<span id="chart-month-display">--</span>)</h2>
+            <div id="spending-chart-container" style="position: relative; height:60vh; width:80vw; max-width: 450px; margin: 15px auto;">
+                <canvas id="spendingPieChart"></canvas> <!-- Canvas element for Chart.js -->
+            </div>
+            <p id="chart-no-data" class="hidden" style="text-align: center; margin-top: 15px; font-style: italic;">No positive spending data available for this period to generate chart.</p>
+        </section>
         <!-- === BUDGET VIEW SECTION === -->
         <section id="budget-view" class="card hidden">
             <h2>Budget for <span id="budget-view-month">--</span></h2>
@@ -79,7 +88,7 @@
             </table>
              <p id="budget-no-data" class="hidden" style="text-align: center; margin-top: 15px; font-style: italic;">No budget data available for this period.</p>
         </section>
-        <!-- === END BUDGET VIEW SECTION === -->
+        <!-- === ADD NEW TRANSACTION SECTION === -->
         <section id="add-expense-form" class="card hidden"> <!-- Hide initially -->
             <h2>Add New Expense/Income</h2>
             <form id="new-tx-form">

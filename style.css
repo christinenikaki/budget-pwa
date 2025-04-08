@@ -347,3 +347,28 @@ footer {
 #budget-no-data {
      color: #6c757d; /* Gray text */
 }
+
+/* --- Chart Section Styles --- */
+
+#charts-section h2 { /* Style if needed, similar to other card headers */
+    margin-top: 0;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+    font-size: 1.3em;
+    color: #495057;
+}
+
+/* Style the container div if you didn't use inline styles */
+#spending-chart-container {
+    position: relative; /* Needed for Chart.js responsiveness */
+    /* max-width: 450px; Set a max width for readability */
+    /* height: 350px; Set a fixed height or use aspect ratio */
+    margin: 20px auto; /* Center the chart container */
+    /* Example using aspect ratio for responsiveness */
+    /* aspect-ratio: 1 / 1; Maintain square aspect ratio */
+}
+
+#chart-no-data {
+     color: #6c757d; /* Gray text */
+}
