@@ -318,21 +318,6 @@ async function processBudgetData(data) {
             if (chartsSection) chartsSection.classList.add('hidden');
         }
 
-        // *** Initial Section Visibility ***
-        // Ensure all sections are hidden initially except the file loader and the default view (e.g., dashboard)
-        mainSections.forEach(section => {
-            if (section.id !== 'dashboard-summary') { // Keep only dashboard visible initially
-                section.id !== 'file-loader' && section.classList.add('hidden'); // Also keep file loader visible initially maybe? Or hide it too? Let's hide others.
-            } else {
-                 section.classList.remove('hidden'); // Make sure default is visible
-            }
-        });
-        // Show sections needed *after* load (add form, sync) - Nav will handle others
-         if (addExpenseFormSection) addExpenseFormSection.classList.add('hidden'); // Start hidden
-         if (syncSection) syncSection.classList.add('hidden'); // Start hidden
-         // Let nav links show these when clicked
-
-
         updateStatus(`Data ready. Select a view from the menu.`, "success"); // Update status
 
     } catch (uiError) {

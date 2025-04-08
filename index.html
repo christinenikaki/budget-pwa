@@ -41,7 +41,7 @@
             <div id="load-status"></div>
         </section>
 
-        <section id="dashboard-summary" class="card hidden">
+        <section id="dashboard-summary" class="main-section hidden">
             <h2>Dashboard <span id="summary-month-display" style="font-size: 0.8em; color: #666;"></span></h2>
 
             <div class="summary-grid"> 
@@ -66,7 +66,7 @@
             </div>
         </section>
         <!-- === CHART SECTION === -->
-        <section id="charts-section" class="card hidden">
+        <section id="charts-section" class="main-section hidden">
             <h2>Spending Breakdown (<span id="chart-month-display">--</span>)</h2>
             <div id="spending-chart-container" style="position: relative; height:60vh; width:80vw; max-width: 450px; margin: 15px auto;">
                 <canvas id="spendingPieChart"></canvas> <!-- Canvas element for Chart.js -->
@@ -74,7 +74,7 @@
             <p id="chart-no-data" class="hidden" style="text-align: center; margin-top: 15px; font-style: italic;">No positive spending data available for this period to generate chart.</p>
         </section>
         <!-- === BUDGET VIEW SECTION === -->
-        <section id="budget-view" class="card hidden">
+        <section id="budget-view" class="main-section hidden">
             <h2>Budget for <span id="budget-view-month">--</span></h2>
             <div class="table-responsive-wrapper">
                 <table id="budget-table">
@@ -105,7 +105,7 @@
              <p id="budget-no-data" class="hidden" style="text-align: center; margin-top: 15px; font-style: italic;">No budget data available for this period.</p>
         </section>
         <!-- === ADD NEW TRANSACTION SECTION === -->
-        <section id="add-expense-form" class="card hidden"> <!-- Hide initially -->
+        <section id="add-expense-form" class="main-section hidden"> <!-- Hide initially -->
             <h2>Add New Expense/Income</h2>
             <form id="new-tx-form">
                 <div class="filter-grid"> <!-- Reuse filter grid styling -->
@@ -155,7 +155,7 @@
             </form>
         </section>
 
-        <section id="sync-section" class="card hidden"> <!-- Hide initially -->
+        <section id="sync-section" class="main-section hidden"> <!-- Hide initially -->
             <h2>Sync Data</h2>
              <p>You have <strong id="pending-count">0</strong> unsynced transaction(s) entered on this device.</p>
             <p>Export the complete, updated data set to manually replace your main <code>budget_data.json</code> file.</p>
@@ -164,7 +164,7 @@
             <div id="export-status" style="margin-top: 10px;"></div>
         </section>
 
-        <section id="transactions-list" class="card hidden">
+        <section id="transactions-list" class="main-section hidden">
             <div class="filter-controls card">
                 <h3>Filter Transactions</h3>
                 <div class="filter-grid">

@@ -133,6 +133,10 @@ header {
 .main-section.hidden {
     display: none;
 }
+/* Style for initially hidden sections */
+.hidden {
+    display: none;
+}
 
 #file-loader input[type="file"] {
     display: block;
