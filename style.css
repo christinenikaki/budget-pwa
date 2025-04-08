@@ -74,6 +74,18 @@ header {
     font-size: 1.3em;
     color: #495057;
 }
+#transactions-table th.th-icon,
+#transactions-table td.td-icon {
+    width: 2em; /* Make the column narrow */
+    text-align: center;
+    padding-left: 5px; /* Reduce padding */
+    padding-right: 5px;
+}
+
+#transactions-table td.td-icon .fa-solid { /* Style the icon itself */
+    font-size: 0.9em; /* Slightly smaller icon */
+    vertical-align: middle; /* Align icon nicely */
+}
 
 /* Style for the textarea in the add form */
 #add-expense-form textarea {
@@ -339,7 +351,7 @@ footer {
 
 /* Style for savings goal rows */
 #budget-tbody tr.savings-goal-row td {
-    background-color: #e0f2f7;
+    background-color: #e8f5e9;
     font-style: italic;
     color: #0c5460; /* Teal color */
 }
@@ -371,4 +383,72 @@ footer {
 
 #chart-no-data {
      color: #6c757d; /* Gray text */
+}
+/* --- Responsive Table Styles --- */
+
+/* Apply only on screens smaller than, say, 768px */
+@media (max-width: 768px) {
+
+    .table-responsive-wrapper {
+        width: 100%; /* Ensure wrapper takes full width of its container */
+        overflow-x: auto; /* Enable horizontal scrolling ONLY when needed */
+        -webkit-overflow-scrolling: touch; /* Improves scrolling feel on iOS */
+        border: 1px solid #eee; /* Optional: subtle border to indicate scroll area */
+        margin-bottom: 1em; /* Add some space below the scrolling table */
+    }
+
+    /* Ensure the table inside uses available width but can grow */
+    .table-responsive-wrapper table {
+        width: 100%; /* Use full width of the wrapper */
+        /* Optional: Add a min-width if you know the minimum space needed
+           to display columns reasonably well without excessive wrapping.
+           Adjust based on your content. */
+        /* min-width: 600px; */
+    }
+
+    /* Optional refinements for mobile tables */
+    #transactions-table th,
+    #transactions-table td,
+    #budget-table th,
+    #budget-table td {
+        padding: 6px 8px; /* Slightly reduce padding */
+        font-size: 0.9em; /* Slightly smaller font */
+        white-space: nowrap; /* Prevent text wrapping in cells - forces scroll */
+    }
+
+    /* Allow wrapping specifically for longer text columns if needed */
+    /* Example: Allow Payee in transactions table to wrap */
+     #transactions-table td:nth-child(4), /* Assuming Payee is the 4th column */
+     #transactions-table th:nth-child(4) {
+         white-space: normal;
+     }
+     /* Example: Allow Category Name in budget table to wrap */
+      #budget-table td:first-child,
+      #budget-table th:first-child {
+          white-space: normal;
+      }
+
+    /* Ensure currency columns remain nowrap */
+    #transactions-table th.currency,
+    #transactions-table td.currency,
+    #budget-table th.currency,
+    #budget-table td.currency {
+        white-space: nowrap;
+    }
+
+    #transactions-table th.th-icon,
+    #transactions-table td.td-icon {
+        width: 1.8em; /* Even narrower on mobile maybe */
+        padding-left: 4px;
+        padding-right: 4px;
+    }
+    #transactions-table td.td-icon .fa-solid {
+        font-size: 0.85em;
+    }
+
+    /* Adjust padding on adjacent cell if needed */
+    #transactions-table th:nth-child(2), /* Header for Date */
+    #transactions-table td:nth-child(2) { /* Cell for Date */
+        padding-left: 4px; /* Reduce space next to icon */
+    }
 }

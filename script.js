@@ -816,7 +816,6 @@ function displayTransactions(originalTransactions = [], pendingTransactions = []
         if (dateB !== dateA) {
             return dateB.localeCompare(dateA);
         }
-        // Fallback sort if dates are same (e.g., by pending status, then maybe amount)
         const pendingA = a.status === 'pending';
         const pendingB = b.status === 'pending';
         if(pendingA !== pendingB) return pendingB ? 1 : -1; // Show pending later on same day? Or earlier? Adjust as needed.
@@ -852,43 +851,64 @@ function displayTransactions(originalTransactions = [], pendingTransactions = []
         row.dataset.memo = txMemo;
 
         // --- Populate Cells ---
-        const cellDate = row.insertCell();
+        // *** Insert Icon Cell (at the beginning - index 0) ***
+        const cellIcon = row.insertCell(0); // Insert as the first cell
+        cellIcon.classList.add('td-icon'); // Add class for styling
+        const icon = document.createElement('i'); // Create <i> element for Font Awesome
+        icon.classList.add('fa-solid'); // Base class for solid icons
+        let iconClass = 'fa-question-circle'; // Default icon
+        let iconTitle = txType.charAt(0).toUpperCase() + txType.slice(1); // Tooltip text
+
+        switch (txType) {
+            case 'income':
+                iconClass = 'fa-arrow-up';
+                icon.style.color = '#28a745'; // Green
+                break;
+            case 'expense':
+                iconClass = 'fa-arrow-down';
+                icon.style.color = '#dc3545'; // Red
+                break;
+            case 'refund':
+                iconClass = 'fa-rotate-left'; // Or fa-undo
+                icon.style.color = '#17a2b8'; // Info/blue color
+                break;
+            case 'transfer':
+                iconClass = 'fa-exchange-alt'; // Or fa-arrows-alt-h
+                icon.style.color = '#6c757d'; // Gray
+                break;
+        }
+        icon.classList.add(iconClass);
+        icon.title = iconTitle; // Add tooltip
+        icon.setAttribute('aria-label', iconTitle); // Accessibility
+        cellIcon.appendChild(icon);
+
+        // Insert remaining cells (indices shift because icon is now cell 0)
+        const cellDate = row.insertCell(1);
         cellDate.textContent = txDate || 'N/A';
+        if (isPending) cellDate.textContent = `[P] ${cellDate.textContent}`; // Add pending prefix here now
 
-        const cellType = row.insertCell();
-        cellType.textContent = txType.charAt(0).toUpperCase() + txType.slice(1);
-
-        const cellAccount = row.insertCell();
+        const cellAccount = row.insertCell(2);
         cellAccount.textContent = displayAccount;
          if (txType === 'transfer') cellAccount.style.fontStyle = 'italic';
 
-        const cellPayee = row.insertCell();
-        cellPayee.textContent = txPayee || txMemo || 'N/A'; // Display Payee or Memo if payee empty
+         const cellPayee = row.insertCell(3);
+         cellPayee.textContent = txPayee || txMemo || 'N/A';
 
+         const cellCategory = row.insertCell(4);
+         cellCategory.textContent = txCategory || '-';
 
-        const cellCategory = row.insertCell();
-        cellCategory.textContent = txCategory || '-'; // Display category or '-'
-
-        const cellAmount = row.insertCell();
-        cellAmount.textContent = formatCurrency(tx.amount || 0);
-        // Add class based on transaction type for potential styling
-         switch(txType) { // Simplified from before
-             case 'income': cellAmount.classList.add('positive-currency'); break;
-             case 'expense': cellAmount.classList.add('negative-currency'); break;
-             case 'refund': cellAmount.classList.add('positive-currency'); break; // Or neutral?
-             case 'transfer': cellAmount.classList.add('zero-currency'); break;
-             default: cellAmount.classList.add('zero-currency');
-         }
-         cellAmount.style.textAlign = 'right';
-         cellAmount.style.fontFamily = 'monospace';
-
-         // *** VISUALLY MARK PENDING ROWS ***
-            if (isPending) {
-                row.style.fontStyle = 'italic';
-                row.style.backgroundColor = '#fff3cd'; // Light yellow background
-                // Optionally add a small icon or text marker
-                row.cells[0].textContent = `[P] ${row.cells[0].textContent}`; // Add [P] prefix to date
-            }
+         const cellAmount = row.insertCell(5);
+         cellAmount.textContent = formatCurrency(tx.amount || 0);
+         // Apply currency class (reuse existing logic)
+          switch(txType) {
+              case 'income': cellAmount.classList.add('positive-currency'); break;
+              case 'expense': cellAmount.classList.add('negative-currency'); break;
+              case 'refund': cellAmount.classList.add('positive-currency'); break;
+              case 'transfer': cellAmount.classList.add('zero-currency'); break;
+              default: cellAmount.classList.add('zero-currency');
+          }
+          cellAmount.style.textAlign = 'right';
+          cellAmount.style.fontFamily = 'monospace';
     });
 
     if (noResultsMessage) noResultsMessage.classList.add('hidden');
