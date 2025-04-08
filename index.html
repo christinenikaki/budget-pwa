@@ -50,6 +50,64 @@
                 </div>
             </div>
         </section>
+        <section id="add-expense-form" class="card hidden"> <!-- Hide initially -->
+            <h2>Add New Expense/Income</h2>
+            <form id="new-tx-form">
+                <div class="filter-grid"> <!-- Reuse filter grid styling -->
+                    <div class="form-group">
+                        <label for="tx-type">Type:</label>
+                        <select id="tx-type" required>
+                            <option value="expense" selected>Expense</option>
+                            <option value="income">Income</option>
+                            <option value="refund">Refund</option>
+                            <!-- Add Transfer later if needed, more complex -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="tx-date">Date:</label>
+                        <input type="date" id="tx-date" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="tx-account">Account:</label>
+                        <select id="tx-account" required>
+                            <option value="">-- Select Account --</option>
+                            <!-- Options populated by JS -->
+                        </select>
+                    </div>
+                     <div class="form-group">
+                        <label for="tx-payee">Payee:</label>
+                        <input type="text" id="tx-payee" placeholder="e.g., Coffee Shop">
+                    </div>
+                    <div class="form-group">
+                        <label for="tx-category">Category:</label>
+                        <select id="tx-category" required>
+                             <option value="">-- Select Category --</option>
+                            <!-- Options populated by JS, excluding Savings/Archived? -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="tx-amount">Amount:</label>
+                        <input type="number" id="tx-amount" step="0.01" min="0.01" required placeholder="e.g., 5.50">
+                    </div>
+
+                </div>
+                 <div class="form-group" style="margin-top: 15px;">
+                     <label for="tx-memo">Memo (Optional):</label>
+                     <textarea id="tx-memo" rows="2"></textarea>
+                 </div>
+                 <button type="submit" class="button">Add Transaction</button>
+                 <div id="add-tx-status" style="margin-top: 10px;"></div>
+            </form>
+        </section>
+
+        <section id="sync-section" class="card hidden"> <!-- Hide initially -->
+            <h2>Sync Data</h2>
+             <p>You have <strong id="pending-count">0</strong> unsynced transaction(s) entered on this device.</p>
+            <p>Export the complete, updated data set to manually replace your main <code>budget_data.json</code> file.</p>
+            <button id="export-data-button" class="button button-secondary" disabled>Export Updated Data File</button>
+            <button id="clear-pending-button" class="button button-danger" disabled style="margin-left: 10px;">Clear Pending Entries</button>
+            <div id="export-status" style="margin-top: 10px;"></div>
+        </section>
 
         <section id="transactions-list" class="card hidden">
             <div class="filter-controls card">

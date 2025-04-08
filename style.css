@@ -64,6 +64,56 @@ header {
 #transactions-table tbody tr:nth-child(even) {
     background-color: #f8f9fa;
 }
+/* Style for the Add Transaction form section */
+#add-expense-form h2,
+#sync-section h2 {
+    margin-top: 0; /* Remove default top margin for h2 inside card */
+    margin-bottom: 15px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+    font-size: 1.3em;
+    color: #495057;
+}
+
+/* Style for the textarea in the add form */
+#add-expense-form textarea {
+    width: 100%;
+    padding: 8px;
+    font-size: 0.95em;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    min-height: 60px; /* Give it some height */
+    resize: vertical; /* Allow vertical resizing */
+    font-family: sans-serif; /* Match other inputs */
+    margin-bottom: 10px; /* Spacing below textarea */
+}
+
+
+/* Style for the Sync section */
+#sync-section p {
+    margin-bottom: 10px; /* Space between paragraphs */
+}
+
+#sync-section strong#pending-count {
+    font-weight: bold;
+    /* Maybe add a background or different color */
+     /* background-color: #ffeeba;
+     padding: 2px 5px;
+     border-radius: 3px; */
+}
+
+/* Add spacing between the export/clear buttons */
+#sync-section #clear-pending-button {
+    margin-left: 10px;
+}
+
+/* Ensure status divs within the sections pick up general status styles */
+/* Add margin if needed */
+#add-tx-status,
+#export-status {
+    margin-top: 10px;
+    /* display: inline-block; */ /* Make sure this doesn't conflict if block is needed */
+}
 
 footer {
     text-align: center;

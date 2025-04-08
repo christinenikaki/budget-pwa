@@ -19,6 +19,84 @@ const filterStartDateInput = document.getElementById('filter-start-date');
 const filterEndDateInput = document.getElementById('filter-end-date');
 const resetFiltersButton = document.getElementById('reset-filters');
 const noResultsMessage = document.getElementById('no-results-message');
+const DB_NAME = 'budgetAppDB';
+const DB_VERSION = 1; // Increment if you change the schema later
+const PENDING_TX_STORE_NAME = 'pendingTransactions';
+let db; // Variable to hold the database instance
+
+const addExpenseFormSection = document.getElementById('add-expense-form');
+const newTxForm = document.getElementById('new-tx-form');
+const txTypeSelect = document.getElementById('tx-type');
+const txDateInput = document.getElementById('tx-date');
+const txAccountSelect = document.getElementById('tx-account');
+const txPayeeInput = document.getElementById('tx-payee');
+const txCategorySelect = document.getElementById('tx-category');
+const txAmountInput = document.getElementById('tx-amount');
+const txMemoInput = document.getElementById('tx-memo');
+const addTxStatusDiv = document.getElementById('add-tx-status');
+
+const syncSection = document.getElementById('sync-section');
+const pendingCountSpan = document.getElementById('pending-count');
+const exportDataButton = document.getElementById('export-data-button');
+const clearPendingButton = document.getElementById('clear-pending-button');
+const exportStatusDiv = document.getElementById('export-status');
+
+// --- Global variable to hold original loaded data ---
+let originalBudgetData = null; // Store the initially loaded data
+
+
+/**
+ * Initializes the IndexedDB database.
+ */
+function initDB() {
+    return new Promise((resolve, reject) => {
+        console.log("Initializing IndexedDB...");
+        // Check if DB is already initialized
+        if (db) {
+            console.log("DB already initialized.");
+            return resolve(db);
+        }
+
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+        request.onerror = (event) => {
+            console.error("IndexedDB error:", event.target.error);
+            reject("Error opening IndexedDB.");
+        };
+
+        request.onsuccess = (event) => {
+            db = event.target.result; // Store the database instance
+            console.log("IndexedDB initialized successfully:", db);
+            resolve(db);
+        };
+
+        // This event only runs if the database doesn't exist or needs upgrading
+        request.onupgradeneeded = (event) => {
+            console.log("IndexedDB upgrade needed...");
+            let tempDb = event.target.result;
+
+            // Create the object store for pending transactions
+            // Use autoIncrementing key for simplicity
+            if (!tempDb.objectStoreNames.contains(PENDING_TX_STORE_NAME)) {
+                console.log(`Creating object store: ${PENDING_TX_STORE_NAME}`);
+                const store = tempDb.createObjectStore(PENDING_TX_STORE_NAME, {
+                    keyPath: 'id', // Use 'id' as the primary key
+                    autoIncrement: true // Automatically generate unique IDs
+                });
+                // Optional: Create indexes for faster searching if needed (e.g., by date)
+                 store.createIndex('dateIndex', 'date', { unique: false });
+                 console.log("Created date index on pending store.");
+            }
+             console.log("IndexedDB upgrade complete.");
+        };
+    });
+}
+initDB().catch(error => {
+    console.error("Failed to initialize IndexedDB on startup:", error);
+    // Maybe display an error to the user that offline saving won't work
+    updateStatus("Warning: Offline storage unavailable. Entered expenses won't be saved.", "error");
+});
+
 
 // --- Initial Setup ---
 if (currentYearSpan) {
@@ -89,7 +167,7 @@ function handleFileSelect(event) {
  * Processes the parsed budget data and updates the UI.
  * @param {object} data The parsed JSON data object.
  */
-function processBudgetData(data) {
+async function processBudgetData(data) {
     // --- Basic Data Validation ---
     if (typeof data !== 'object' || data === null) {
          updateStatus("Error: Invalid data format (not an object).", "error");
@@ -108,35 +186,52 @@ function processBudgetData(data) {
         updateStatus("Error: Missing or invalid 'ready_to_assign' data.", "error");
         return;
     }
-    // Add more checks if needed (e.g., for categories, budget_periods)
+    // *** Store the original data ***
+    originalBudgetData = JSON.parse(JSON.stringify(data)); // Deep copy
 
     // --- Update UI Sections ---
     try {
-        populateAccountFilter(data.accounts);
-        // Pass both categories list AND transactions to catch all used categories
-        populateCategoryFilter(data.categories, data.transactions);
-        const latestMonth = findLatestMonth(data.transactions);
-        let monthSummary = { latestMonth: latestMonth, income: 0, spending: 0 }; // Default
+        // Populate filters FIRST, including the new form dropdowns
+        populateAccountFilter(data.accounts, [filterAccountSelect, txAccountSelect]); // Pass both selects
+        populateCategoryFilter(data.categories, data.transactions, [filterCategorySelect, txCategorySelect]); // Pass both selects
+
+        // Load pending transactions from DB
+        const pendingTransactions = await loadPendingTransactions();
+        updatePendingCountUI(pendingTransactions.length);
+
+        // Combine original and pending for initial display
+        const allTransactionsForDisplay = [...data.transactions, ...pendingTransactions];
+
+        const latestMonth = findLatestMonth(allTransactionsForDisplay); // Use combined for latest month calc
+        let monthSummary = { latestMonth: latestMonth, income: 0, spending: 0 };
         if (latestMonth) {
-            monthSummary = { // Recalculate if month found
+            // Calculate summary based on COMBINED data for display consistency
+            monthSummary = {
                 latestMonth: latestMonth,
-                ...calculatePeriodSummary(latestMonth, data.transactions) // Spread calculated income/spending
+                ...calculatePeriodSummary(latestMonth, allTransactionsForDisplay) // Use combined data
             };
         }
-        displayDashboardSummary(monthSummary); // Update the summary section
+        displayDashboardSummary(monthSummary);
+
+        // Display account balances based on ORIGINAL data (or recalc after merge later)
+        // Let's stick to original for now, export will recalculate true final balance
         displayAccountBalances(data.accounts);
         displayRTA(data.ready_to_assign);
-        displayTransactions(data.transactions);
 
-        resetAllFilters(); // Call reset to ensure table matches default filter state
+        // Display transactions (original + pending)
+        displayTransactions(data.transactions, pendingTransactions);
+
+        resetAllFilters(); // Reset filters for the combined list
 
         // Show the data sections now that they are populated
-        showDataSections();
-        updateStatus(`Data from file displayed successfully.`, "success");
+        showDataSections(); // Keep this
+        if (addExpenseFormSection) addExpenseFormSection.classList.remove('hidden'); // Show add form
+        if (syncSection) syncSection.classList.remove('hidden'); // Show sync section
+        updateStatus(`Data from file displayed successfully. ${pendingTransactions.length} pending entries loaded.`, "success");
 
-    } catch(uiError) {
-         console.error("Error updating UI:", uiError);
-         updateStatus(`Error displaying data: ${uiError.message}`, "error");
+    } catch (uiError) {
+        console.error("Error updating UI:", uiError);
+        updateStatus(`Error displaying data: ${uiError.message}`, "error");
     }
 }
 /**
@@ -271,59 +366,63 @@ function displayRTA(rta) {
 }
 
 /**
- * Displays transactions in the table, adding data attributes for filtering.
- * @param {Array} transactions The transactions array from the JSON data.
+ * Displays transactions in the table, marking pending ones.
+ * @param {Array} originalTransactions The original transactions array.
+ * @param {Array} pendingTransactions Transactions from IndexedDB.
  */
-function displayTransactions(transactions) {
+function displayTransactions(originalTransactions = [], pendingTransactions = []) {
     if (!transactionsTbody) return;
     transactionsTbody.innerHTML = ''; // Clear previous transactions
 
-    if (transactions.length === 0) {
+    const combined = [...originalTransactions, ...pendingTransactions];
+
+    if (combined.length === 0) {
         transactionsTbody.innerHTML = '<tr><td colspan="6">No transactions found.</td></tr>';
-        // Hide no results message initially if table is empty
-         if (noResultsMessage) noResultsMessage.classList.add('hidden');
+        if (noResultsMessage) noResultsMessage.classList.add('hidden');
         return;
     }
 
-    // Optional: Sort transactions by date (descending)
-    const sortedTransactions = transactions.sort((a, b) => {
+    const sortedTransactions = combined.sort((a, b) => {
         const dateA = a.date || '0000-00-00';
         const dateB = b.date || '0000-00-00';
-        return dateB.localeCompare(dateA);
+        // Add secondary sort by entry timestamp or ID if available for stability
+        if (dateB !== dateA) {
+            return dateB.localeCompare(dateA);
+        }
+        // Fallback sort if dates are same (e.g., by pending status, then maybe amount)
+        const pendingA = a.status === 'pending';
+        const pendingB = b.status === 'pending';
+        if(pendingA !== pendingB) return pendingB ? 1 : -1; // Show pending later on same day? Or earlier? Adjust as needed.
+        return (b.amount || 0) - (a.amount || 0); // Example fallback
     });
-
 
     sortedTransactions.forEach(tx => {
         const row = transactionsTbody.insertRow();
+        const isPending = tx.status === 'pending'; // Check if it's a pending one
 
-        // --- Store data in data-* attributes for filtering ---
+        // --- Store data in data-* attributes (same as before) ---
         const txDate = tx.date || '';
+        // ... (rest of the data attribute logic remains largely the same) ...
+        let txAccount = '';
+        let displayAccount = 'N/A';
         const txType = tx.type || 'unknown';
-        // Handle account based on type
-        let txAccount = ''; // Account used for filtering (single value)
-        let displayAccount = 'N/A'; // What's shown in the cell
         if (txType === 'transfer') {
-            txAccount = `${tx.source_account || '?'}|${tx.destination_account || '?'}`; // Store both for potential complex filter, or pick one? Let's just use source for simplicity here
-            displayAccount = `${tx.source_account || '?'} -> ${tx.destination_account || '?'}`;
-            // For filtering, maybe check if filter matches EITHER source or dest?
-            // Alternative: Just filter based on source account maybe? Let's try filtering on source only first.
-            row.dataset.account = tx.source_account || ''; // Filter based on source
-            // Or add both: row.dataset.sourceAccount = tx.source_account || ''; row.dataset.destAccount = tx.destination_account || '';
+             // Handle transfers if you implement them
+             displayAccount = `${tx.source_account || '?'} -> ${tx.destination_account || '?'}`;
+             row.dataset.account = tx.source_account || '';
         } else {
-            txAccount = tx.account || '';
-            displayAccount = txAccount;
-            row.dataset.account = txAccount; // Store account name
+             txAccount = tx.account || '';
+             displayAccount = txAccount;
+             row.dataset.account = txAccount;
         }
-        const txCategory = tx.category || (txType === 'transfer' ? '' : 'Uncategorized'); // Use '' for transfer category filter
+        const txCategory = tx.category || (txType === 'transfer' ? '' : 'Uncategorized');
         const txPayee = tx.payee || (txType === 'transfer' ? 'Transfer' : '');
         const txMemo = tx.memo || '';
 
         row.dataset.date = txDate;
         row.dataset.category = txCategory;
-        row.dataset.payee = txPayee; // Store raw payee
-        row.dataset.memo = txMemo; // Store raw memo
-        // row.dataset.account is set above based on type
-
+        row.dataset.payee = txPayee;
+        row.dataset.memo = txMemo;
 
         // --- Populate Cells ---
         const cellDate = row.insertCell();
@@ -355,62 +454,400 @@ function displayTransactions(transactions) {
          }
          cellAmount.style.textAlign = 'right';
          cellAmount.style.fontFamily = 'monospace';
+
+         // *** VISUALLY MARK PENDING ROWS ***
+            if (isPending) {
+                row.style.fontStyle = 'italic';
+                row.style.backgroundColor = '#fff3cd'; // Light yellow background
+                // Optionally add a small icon or text marker
+                row.cells[0].textContent = `[P] ${row.cells[0].textContent}`; // Add [P] prefix to date
+            }
     });
 
-     // Ensure no-results message is hidden after populating
-     if (noResultsMessage) noResultsMessage.classList.add('hidden');
+    if (noResultsMessage) noResultsMessage.classList.add('hidden');
 }
 
 /**
- * Populates the account filter dropdown.
+ * Populates account filter dropdown(s).
  * @param {object} accounts Accounts object { accountName: balance }.
+ * @param {Array<HTMLSelectElement>} selectElements Array of select elements to populate.
  */
-function populateAccountFilter(accounts) {
-    if (!filterAccountSelect) return;
-    // Clear existing options (keep the first "-- All --" option)
-    filterAccountSelect.length = 1;
+function populateAccountFilter(accounts, selectElements = []) {
+    if (!accounts) return;
+    const accountNames = Object.keys(accounts).sort();
 
-    const accountNames = Object.keys(accounts).sort(); // Get sorted names
-    accountNames.forEach(name => {
-        const option = document.createElement('option');
-        option.value = name;
-        option.textContent = name;
-        filterAccountSelect.appendChild(option);
+    selectElements.forEach(select => {
+        if (!select) return;
+        // Store current value if needed, or assume reset is fine
+        // Clear existing options (keep the first default option if it exists)
+        const firstOptionText = select.options.length > 0 ? select.options[0].text : "";
+        select.length = 0; // Clear all
+        if(firstOptionText.toLowerCase().includes("all") || firstOptionText.toLowerCase().includes("select")){
+             const defaultOption = document.createElement('option');
+             defaultOption.value = "";
+             defaultOption.textContent = firstOptionText; // Restore default option
+             select.appendChild(defaultOption);
+        }
+
+
+        accountNames.forEach(name => {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            select.appendChild(option);
+        });
     });
 }
 
 /**
- * Populates the category filter dropdown.
+ * Populates category filter dropdown(s).
  * @param {Array} categories Categories array [categoryName1, categoryName2].
- * @param {Array} transactions Transaction list (to include categories only present in transactions)
+ * @param {Array} transactions Transaction list.
+ * @param {Array<HTMLSelectElement>} selectElements Array of select elements to populate.
  */
-function populateCategoryFilter(categories = [], transactions = []) {
-    if (!filterCategorySelect) return;
-    // Clear existing options (keep the first "-- All --" option)
-    filterCategorySelect.length = 1;
+function populateCategoryFilter(categories = [], transactions = [], selectElements = []) {
+    if(!categories && !transactions) return;
+   // Create a set to store unique category names (same logic as before)
+   const categorySet = new Set(categories);
+   transactions.forEach(tx => {
+       if(tx.category) categorySet.add(tx.category);
+       if (!tx.category && tx.type !== 'transfer' && !categorySet.has('Uncategorized')) {
+           categorySet.add('Uncategorized');
+       }
+   });
+   // Remove internal categories if they slip in?
+   // categorySet.delete("Unknown Income Source");
+   // Add filter logic here? Exclude Savings/Archived for the ADD form dropdown?
+   // let validCategoryNames = Array.from(categorySet).sort();
 
-    // Create a set to store unique category names from both lists
-    const categorySet = new Set(categories);
+   selectElements.forEach(select => {
+       if (!select) return;
+       const firstOptionText = select.options.length > 0 ? select.options[0].text : "";
+       select.length = 0; // Clear all
+        if(firstOptionText.toLowerCase().includes("all") || firstOptionText.toLowerCase().includes("select")){
+            const defaultOption = document.createElement('option');
+            defaultOption.value = "";
+            defaultOption.textContent = firstOptionText; // Restore default option
+            select.appendChild(defaultOption);
+       }
 
-    // Add categories found only in transactions (e.g., if category list is incomplete)
-     transactions.forEach(tx => {
-        if(tx.category) categorySet.add(tx.category);
-        // Also add 'Uncategorized' if present and not already in main list
-        if (!tx.category && tx.type !== 'transfer' && !categorySet.has('Uncategorized')) {
-            categorySet.add('Uncategorized');
+       // Filter categories specifically for the ADD form if needed
+       let categoryNamesForSelect = Array.from(categorySet).sort();
+       if (select.id === 'tx-category') {
+           // Example: Filter out specific categories for the 'Add Transaction' dropdown
+           // Assuming originalBudgetData.category_groups exists and holds group info
+           const groups = originalBudgetData?.category_groups || {};
+           const savingsGroupName = "Savings Goals"; // Define constants if possible
+           const archivedGroupName = "Archived";
+           categoryNamesForSelect = categoryNamesForSelect.filter(cat =>
+                groups[cat] !== savingsGroupName && groups[cat] !== archivedGroupName && cat !== "Unknown Income Source"
+           );
+       }
+
+
+       categoryNamesForSelect.forEach(name => {
+           if (!name) return;
+           const option = document.createElement('option');
+           option.value = name;
+           option.textContent = name;
+           select.appendChild(option);
+       });
+   });
+}
+// --- IndexedDB Interaction Functions ---
+
+/**
+ * Saves a single pending transaction to IndexedDB.
+ * @param {object} transaction The transaction object to save.
+ */
+function savePendingTransaction(transaction) {
+    return new Promise(async (resolve, reject) => {
+        if (!db) {
+            try {
+                await initDB(); // Ensure DB is ready
+            } catch (err) {
+                 return reject("Database not initialized.");
+            }
         }
-     });
 
+        // Add a status marker
+        transaction.status = 'pending';
+        // Add a timestamp for potential sorting/reference
+        transaction.entry_timestamp = new Date().toISOString();
 
-    const categoryNames = Array.from(categorySet).sort(); // Get unique sorted names
-    categoryNames.forEach(name => {
-        if (!name) return; // Skip empty category names if any
-        const option = document.createElement('option');
-        option.value = name;
-        option.textContent = name;
-        filterCategorySelect.appendChild(option);
+        const tx = db.transaction(PENDING_TX_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(PENDING_TX_STORE_NAME);
+
+        // 'add' will fail if key already exists (good if using non-auto keys)
+        // Since we use autoIncrement, 'add' is fine.
+        const request = store.add(transaction);
+
+        request.onsuccess = (event) => {
+            console.log("Pending transaction saved successfully to IndexedDB, ID:", event.target.result);
+            resolve(event.target.result); // Return the new ID
+        };
+
+        request.onerror = (event) => {
+            console.error("Error saving pending transaction:", event.target.error);
+            reject("Error saving transaction.");
+        };
     });
 }
+
+/**
+ * Loads all pending transactions from IndexedDB.
+ * @returns {Promise<Array>} A promise that resolves with an array of pending transactions.
+ */
+function loadPendingTransactions() {
+    return new Promise(async (resolve, reject) => {
+         if (!db) {
+            try {
+                await initDB();
+            } catch (err) {
+                 return reject("Database not initialized.");
+            }
+        }
+        const tx = db.transaction(PENDING_TX_STORE_NAME, 'readonly');
+        const store = tx.objectStore(PENDING_TX_STORE_NAME);
+        const request = store.getAll(); // Get all records
+
+        request.onsuccess = (event) => {
+            console.log(`Loaded ${event.target.result.length} pending transactions.`);
+            resolve(event.target.result || []); // Return results or empty array
+        };
+
+        request.onerror = (event) => {
+            console.error("Error loading pending transactions:", event.target.error);
+            reject("Error loading transactions.");
+        };
+    });
+}
+
+/**
+ * Clears all pending transactions from IndexedDB.
+ */
+function clearPendingTransactions() {
+    return new Promise(async (resolve, reject) => {
+        if (!db) {
+             try {
+                await initDB();
+            } catch (err) {
+                 return reject("Database not initialized.");
+            }
+        }
+
+        const tx = db.transaction(PENDING_TX_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(PENDING_TX_STORE_NAME);
+        const request = store.clear(); // Delete all records
+
+        request.onsuccess = () => {
+            console.log("Pending transactions cleared from IndexedDB.");
+            resolve();
+        };
+
+        request.onerror = (event) => {
+            console.error("Error clearing pending transactions:", event.target.error);
+            reject("Error clearing transactions.");
+        };
+    });
+}
+
+// --- Add Form Handling ---
+if (newTxForm) {
+    newTxForm.addEventListener('submit', handleAddTransaction);
+}
+
+/**
+ * Handles the submission of the new transaction form.
+ * @param {Event} event The form submission event.
+ */
+async function handleAddTransaction(event) {
+    event.preventDefault(); // Prevent default page reload
+    if (!addTxStatusDiv) return;
+
+    addTxStatusDiv.textContent = "Adding...";
+    addTxStatusDiv.className = 'status-info';
+
+    // Basic validation (redundant with 'required' but good practice)
+    if (!txDateInput.value || !txAccountSelect.value || !txCategorySelect.value || !txAmountInput.value) {
+        addTxStatusDiv.textContent = "Error: Please fill all required fields.";
+        addTxStatusDiv.className = 'status-error';
+        return;
+    }
+
+    const newTx = {
+        type: txTypeSelect.value,
+        date: txDateInput.value,
+        account: txAccountSelect.value,
+        payee: txPayeeInput.value.trim() || `(${txTypeSelect.value})`, // Use type if payee empty
+        category: txCategorySelect.value,
+        amount: parseFloat(txAmountInput.value),
+        memo: txMemoInput.value.trim(),
+        // 'status' and 'entry_timestamp' added by savePendingTransaction
+    };
+
+     // Validate amount further
+     if (isNaN(newTx.amount) || newTx.amount <= 0) {
+         addTxStatusDiv.textContent = "Error: Invalid amount.";
+         addTxStatusDiv.className = 'status-error';
+         return;
+     }
+
+    try {
+        // Save to IndexedDB
+        const newId = await savePendingTransaction(newTx);
+        newTx.id = newId; // Add the generated ID back for UI update
+
+        // Update UI immediately
+        // 1. Reload pending list (or just add newTx to existing pending list in memory)
+        const updatedPending = await loadPendingTransactions();
+        updatePendingCountUI(updatedPending.length);
+
+        // 2. Re-render the transaction table
+        // We need original transactions here. Assume `originalBudgetData` holds them.
+        displayTransactions(originalBudgetData?.transactions || [], updatedPending);
+        resetAllFilters(); // Applying filters might hide the newly added row, so reset
+
+        // 3. Clear the form
+        newTxForm.reset();
+        txDateInput.valueAsDate = new Date(); // Set date to today
+
+        // 4. Update status message
+        addTxStatusDiv.textContent = "Transaction added locally.";
+        addTxStatusDiv.className = 'status-success';
+
+    } catch (error) {
+        console.error("Failed to add transaction:", error);
+        addTxStatusDiv.textContent = `Error: ${error}`;
+        addTxStatusDiv.className = 'status-error';
+    }
+}
+
+// --- Sync Section Handling ---
+
+/** Updates the pending count display and button states. */
+function updatePendingCountUI(count) {
+    if (pendingCountSpan) pendingCountSpan.textContent = count;
+    if (exportDataButton) exportDataButton.disabled = count === 0;
+    if (clearPendingButton) clearPendingButton.disabled = count === 0;
+}
+
+if(exportDataButton) {
+   exportDataButton.addEventListener('click', handleExportData);
+}
+if(clearPendingButton) {
+   clearPendingButton.addEventListener('click', handleClearPending);
+}
+
+/**
+ * Handles the export data button click.
+ */
+async function handleExportData() {
+    if (!originalBudgetData) {
+        updateExportStatus("Error: No original data loaded to merge with.", "error");
+        return;
+    }
+    updateExportStatus("Preparing export...", "info");
+
+    try {
+        const pendingTransactions = await loadPendingTransactions();
+        if (pendingTransactions.length === 0) {
+            updateExportStatus("No pending transactions to export.", "info");
+            return;
+        }
+
+        // *** IMPORTANT: Recalculate final state ***
+        // Create a deep copy to modify
+        let finalData = JSON.parse(JSON.stringify(originalBudgetData));
+
+        // Merge pending transactions
+        pendingTransactions.forEach(pendingTx => {
+            // Remove temporary status before adding
+            const { status, entry_timestamp, id, ...txToAdd } = pendingTx; // Exclude temp fields
+             // Generate UUID? Python uses UUID, JS needs library or simple timestamp ID maybe
+             // For simplicity, let's assume the Python loader can handle potentially missing IDs or add them later
+             // txToAdd.id = self.crypto.randomUUID(); // Browser native UUID generation (modern browsers)
+             finalData.transactions.push(txToAdd);
+
+             // --- Adjust account balances and RTA based on the added tx ---
+             // Replicate logic from bl.add_transaction and bl.add_transfer_transaction
+             const amount = txToAdd.amount || 0;
+             if(txToAdd.type === 'income') {
+                 if (finalData.accounts[txToAdd.account] !== undefined) {
+                     finalData.accounts[txToAdd.account] += amount;
+                 } else { console.warn(`Account ${txToAdd.account} not found for income recalc.`)}
+                 finalData.ready_to_assign += amount; // Adjust RTA for income
+             } else if (txToAdd.type === 'expense') {
+                  if (finalData.accounts[txToAdd.account] !== undefined) {
+                     finalData.accounts[txToAdd.account] -= amount;
+                 } else { console.warn(`Account ${txToAdd.account} not found for expense recalc.`)}
+                 // No direct RTA change for expense
+             } else if (txToAdd.type === 'refund') {
+                  if (finalData.accounts[txToAdd.account] !== undefined) {
+                     finalData.accounts[txToAdd.account] += amount;
+                 } else { console.warn(`Account ${txToAdd.account} not found for refund recalc.`)}
+                  // No direct RTA change for refund
+             }
+             // Add transfer logic if implemented
+        });
+
+        // --- Prepare file for download ---
+        const jsonDataString = JSON.stringify(finalData, null, 4); // Pretty print JSON
+        const blob = new Blob([jsonDataString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `budget_data_updated_${new Date().toISOString().slice(0,10)}.json`; // Add date to filename
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url); // Clean up
+
+        updateExportStatus("Export file generated. Please save it and replace your original file.", "success");
+
+        // --- Ask user if they want to clear pending after download ---
+        // It's safer NOT to clear automatically, let user confirm via button.
+        // await clearPendingTransactions();
+        // updatePendingCountUI(0);
+        // displayTransactions(finalData.transactions, []); // Re-render table without pending
+
+    } catch (error) {
+        console.error("Export failed:", error);
+        updateExportStatus(`Export failed: ${error}`, "error");
+    }
+}
+
+/**
+ * Handles the clear pending button click.
+ */
+async function handleClearPending() {
+    if (confirm("Are you sure you want to clear all locally saved, unsynced transactions? This cannot be undone.")) {
+         updateExportStatus("Clearing pending entries...", "info");
+         try {
+             await clearPendingTransactions();
+             updatePendingCountUI(0);
+             // Re-render the transaction list without pending items
+             displayTransactions(originalBudgetData?.transactions || [], []);
+             updateExportStatus("Pending entries cleared.", "success");
+             addTxStatusDiv.textContent = ""; // Clear add form status too
+         } catch (error) {
+              console.error("Failed to clear pending:", error);
+             updateExportStatus(`Error clearing pending entries: ${error}`, "error");
+         }
+    }
+}
+
+/** Updates the export status message area */
+function updateExportStatus(message, type = "info") {
+    if (exportStatusDiv) {
+        exportStatusDiv.textContent = message;
+        exportStatusDiv.className = `status-${type}`;
+    }
+    console.log(`Export Status [${type}]: ${message}`);
+}
+
+
 // --- Helper Functions ---
 
 /**
@@ -578,3 +1015,8 @@ if (filterCategorySelect) filterCategorySelect.addEventListener('change', filter
 if (filterStartDateInput) filterStartDateInput.addEventListener('input', filterTransactions);
 if (filterEndDateInput) filterEndDateInput.addEventListener('input', filterTransactions);
 if (resetFiltersButton) resetFiltersButton.addEventListener('click', resetAllFilters);
+
+// --- Initialize Date Input ---
+if (txDateInput) {
+    txDateInput.valueAsDate = new Date(); // Default to today's date
+}

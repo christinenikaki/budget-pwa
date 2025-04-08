@@ -70,24 +70,6 @@ self.addEventListener('fetch', event => {
         // If not in cache, fetch from the network
         console.log('Service Worker: Fetching from network:', event.request.url);
         return fetch(event.request)
-                // Optional: You could add the fetched resource to the cache here
-                // Be careful with caching everything, especially dynamic data
-                /*.then(networkResponse => {
-                    // Check if we received a valid response
-                    if(!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-                       return networkResponse;
-                    }
-                    // IMPORTANT: Clone the response. A response is a stream
-                    // and because we want the browser to consume the response
-                    // as well as the cache consuming the response, we need
-                    // to clone it so we have two streams.
-                    var responseToCache = networkResponse.clone();
-                    caches.open(CACHE_NAME)
-                      .then(cache => {
-                          cache.put(event.request, responseToCache);
-                      });
-                    return networkResponse;
-                });*/
                ;
       })
       .catch(error => {
