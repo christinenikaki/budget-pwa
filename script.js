@@ -4,6 +4,7 @@ console.log("Script loaded!");
 // --- DOM Element References ---
 const fileInput = document.getElementById('jsonFileInput');
 const loadStatusDiv = document.getElementById('load-status');
+const fileLoaderSection = document.getElementById('file-loader');
 const dashboardSection = document.getElementById('dashboard-summary');
 const transactionsSection = document.getElementById('transactions-list');
 const balancesList = document.getElementById('balances-list');
@@ -316,6 +317,13 @@ async function processBudgetData(data) {
         } else {
             // Hide if no month/canvas
             if (chartsSection) chartsSection.classList.add('hidden');
+        }
+        // *** HIDE THE FILE LOADER SECTION ***
+        if (fileLoaderSection) {
+            fileLoaderSection.classList.add('hidden');
+            console.log("File loader section hidden after successful data load.");
+        } else {
+            console.warn("Could not find fileLoaderSection to hide.");
         }
 
         updateStatus(`Data ready. Select a view from the menu.`, "success"); // Update status
