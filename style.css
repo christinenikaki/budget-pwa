@@ -498,6 +498,46 @@ footer {
 #chart-no-data {
      color: #6c757d; /* Gray text */
 }
+
+#categories-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+}
+
+#categories-table th,
+#categories-table td {
+    border: 1px solid #ddd;
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: middle;
+}
+
+#categories-table thead th {
+    background-color: #e9ecef;
+    /* Make header sticky if desired (like other tables) */
+    position: -webkit-sticky; /* Safari */
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+#categories-table tbody tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+
+/* Style for pending status cell if needed */
+#categories-table td.status-pending {
+    font-style: italic;
+    color: #6c757d; /* Gray */
+}
+
+/* Adjust max-height for this specific table wrapper if needed */
+#categories-table-wrapper {
+     max-height: 50vh; /* Example: Slightly shorter than others */
+     /* Inherits other styles from .table-responsive-wrapper */
+}
+
 /* --- Responsive Table Styles --- */
 
 /* Apply only on screens smaller than, say, 768px */

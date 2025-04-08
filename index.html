@@ -28,6 +28,7 @@
             <li><a href="#charts-section" class="nav-link" data-section="charts-section">Charts</a></li>
             <li><a href="#add-expense-form" class="nav-link" data-section="add-expense-form">Add Entry</a></li>
             <li><a href="#transactions-list" class="nav-link" data-section="transactions-list">Transactions</a></li>
+            <li><a href="#manage-categories" class="nav-link" data-section="manage-categories">Manage Categories</a></li>
             <li><a href="#sync-section" class="nav-link" data-section="sync-section">Sync Data</a></li>
         </ul>
     </nav>
@@ -217,6 +218,54 @@
                         <tr><td colspan="6">Please load data...</td></tr> <!-- Adjust colspan -->
                     </tbody>
                 </table>
+            </div>
+        </section>
+        
+        <section id="manage-categories" class="main-section hidden">
+            <h2>Manage Categories & Groups</h2>
+
+            <!-- Form to Add New Category -->
+            <div class="card" style="margin-bottom: 25px;">
+                <h3>Add New Category</h3>
+                <form id="add-category-form">
+                    <div class="filter-grid"> <!-- Reuse filter grid for layout -->
+                        <div class="form-group">
+                            <label for="new-category-name">Category Name:</label>
+                            <input type="text" id="new-category-name" placeholder="e.g., Public Transport" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-category-group">Assign to Group:</label>
+                            <input type="text" id="new-category-group" placeholder="e.g., Everyday Expenses" list="existing-groups-list" required>
+                            <!-- Datalist for suggestions (populated by JS) -->
+                            <datalist id="existing-groups-list"></datalist>
+                        </div>
+                         <div class="form-group">
+                             <button type="submit" class="button">Add Category</button>
+                         </div>
+                    </div>
+                     <div id="add-category-status" style="margin-top: 10px;"></div>
+                </form>
+            </div>
+
+            <!-- Table to Display Existing Categories -->
+            <div class="card">
+                 <h3>Existing Categories</h3>
+                 <p id="categories-no-data" class="hidden" style="text-align: center; margin: 15px; font-style: italic;">No categories loaded or defined yet.</p>
+                 <div class="table-responsive-wrapper" id="categories-table-wrapper"> <!-- Add ID for potential height adjustment -->
+                     <table id="categories-table">
+                         <thead>
+                             <tr>
+                                 <th>Category Name</th>
+                                 <th>Group Name</th>
+                                 <th>Status</th> <!-- To show if pending -->
+                             </tr>
+                         </thead>
+                         <tbody id="categories-tbody">
+                             <!-- Categories populated by JS -->
+                             <tr><td colspan="3">Loading categories...</td></tr>
+                         </tbody>
+                     </table>
+                 </div>
             </div>
         </section>
 
