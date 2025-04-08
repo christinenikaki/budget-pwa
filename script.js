@@ -1167,6 +1167,25 @@ if(clearPendingButton) {
 }
 
 /**
+ * Generates a Version 4 UUID string.
+ * Uses browser's crypto API if available, otherwise provides a basic fallback
+ * (Fallback is less robust for true uniqueness but okay for this personal app).
+ * @returns {string} A UUID string.
+ */
+function generateUUID() {
+    if (self.crypto && self.crypto.randomUUID) {
+        return self.crypto.randomUUID();
+    } else {
+        // Basic fallback for older environments (less random)
+        console.warn("Using basic fallback for UUID generation.");
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+}
+
+/**
  * Handles the export data button click.
  */
 async function handleExportData() {
@@ -1183,38 +1202,37 @@ async function handleExportData() {
             return;
         }
 
-        // *** IMPORTANT: Recalculate final state ***
         // Create a deep copy to modify
         let finalData = JSON.parse(JSON.stringify(originalBudgetData));
 
         // Merge pending transactions
         pendingTransactions.forEach(pendingTx => {
             // Remove temporary status before adding
-            const { status, entry_timestamp, id, ...txToAdd } = pendingTx; // Exclude temp fields
-             // Generate UUID? Python uses UUID, JS needs library or simple timestamp ID maybe
-             // For simplicity, let's assume the Python loader can handle potentially missing IDs or add them later
-             // txToAdd.id = self.crypto.randomUUID(); // Browser native UUID generation (modern browsers)
-             finalData.transactions.push(txToAdd);
+            const { status, ...txDataFromDB } = pendingTx;
+            const txToSave = {
+                ...txDataFromDB, // Spread all fields (inc. entry_timestamp, amount, etc.)
+                id: generateUUID(), // Replace numeric IndexedDB id with a UUID string
+                // Ensure amount is a number (IndexedDB stores it correctly, but safety check)
+                amount: parseFloat(txDataFromDB.amount || 0),
+            };
+            finalData.transactions.push(txToSave);
 
              // --- Adjust account balances and RTA based on the added tx ---
-             // Replicate logic from bl.add_transaction and bl.add_transfer_transaction
-             const amount = txToAdd.amount || 0;
-             if(txToAdd.type === 'income') {
-                 if (finalData.accounts[txToAdd.account] !== undefined) {
-                     finalData.accounts[txToAdd.account] += amount;
-                 } else { console.warn(`Account ${txToAdd.account} not found for income recalc.`)}
-                 finalData.ready_to_assign += amount; // Adjust RTA for income
-             } else if (txToAdd.type === 'expense') {
-                  if (finalData.accounts[txToAdd.account] !== undefined) {
-                     finalData.accounts[txToAdd.account] -= amount;
-                 } else { console.warn(`Account ${txToAdd.account} not found for expense recalc.`)}
-                 // No direct RTA change for expense
-             } else if (txToAdd.type === 'refund') {
-                  if (finalData.accounts[txToAdd.account] !== undefined) {
-                     finalData.accounts[txToAdd.account] += amount;
-                 } else { console.warn(`Account ${txToAdd.account} not found for refund recalc.`)}
-                  // No direct RTA change for refund
-             }
+             const amount = txToSave.amount; // Use amount from the object we just created
+             if (txToSave.type === 'income') {
+                 if (finalData.accounts[txToSave.account] !== undefined) {
+                     finalData.accounts[txToSave.account] += amount;
+                 } else { console.warn(`Account ${txToSave.account} not found for income recalc.`); }
+                 finalData.ready_to_assign += amount;
+             } else if (txToSave.type === 'expense') {
+                  if (finalData.accounts[txToSave.account] !== undefined) {
+                     finalData.accounts[txToSave.account] -= amount;
+                 } else { console.warn(`Account ${txToSave.account} not found for expense recalc.`); }
+             } else if (txToSave.type === 'refund') {
+                  if (finalData.accounts[txToSave.account] !== undefined) {
+                     finalData.accounts[txToSave.account] += amount;
+                 } else { console.warn(`Account ${txToSave.account} not found for refund recalc.`); }
+             }             
              // Add transfer logic if implemented
         });
 
@@ -1232,12 +1250,6 @@ async function handleExportData() {
         URL.revokeObjectURL(url); // Clean up
 
         updateExportStatus("Export file generated. Please save it and replace your original file.", "success");
-
-        // --- Ask user if they want to clear pending after download ---
-        // It's safer NOT to clear automatically, let user confirm via button.
-        // await clearPendingTransactions();
-        // updatePendingCountUI(0);
-        // displayTransactions(finalData.transactions, []); // Re-render table without pending
 
     } catch (error) {
         console.error("Export failed:", error);
