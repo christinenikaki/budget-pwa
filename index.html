@@ -283,7 +283,16 @@
                 <p>In Standalone Mode, data is saved locally. You can export all data for backup purposes.</p>
                 <button id="export-standalone-button" class="button button-secondary">Export All Data</button>
                  <div id="export-standalone-status" style="margin-top: 10px;"></div>
-                 <!-- Add Import functionality later if needed -->
+                 <hr style="margin: 30px 0;"> <!-- Separator -->
+
+                 <h3>Import Data (Replaces Existing)</h3>
+                 <p style="color: #dc3545; font-weight: bold;">Warning: Importing will delete ALL current budget data (transactions, accounts, categories, budgets) on this device before loading the file.</p>
+                 <div class="form-group"> <!-- Reuse form-group for structure -->
+                    <label for="import-standalone-file">Select Backup File (.json):</label>
+                    <input type="file" id="import-standalone-file" accept=".json" style="display: block; margin-top: 5px;">
+                 </div>
+                 <button id="import-standalone-button" class="button button-danger" disabled style="margin-top: 10px;">Import File and Replace Data</button>
+                 <div id="import-standalone-status" style="margin-top: 10px;"></div>
              </div>
         </section>
 
@@ -346,7 +355,7 @@
     </main>
 
     <footer>
-        <p>© <span id="current-year"></span>Zero-Budget</p>
+        <p>© <span id="current-year"></span> Zero-Budget</p>
     </footer>
 
 </body>

@@ -42,8 +42,12 @@ const pendingCountSpan = document.getElementById('pending-count');
 const exportDataButton = document.getElementById('export-data-button');
 const clearPendingButton = document.getElementById('clear-pending-button');
 const exportStatusDiv = document.getElementById('export-status');
+// --- Standalone Import/Export Elements ---
 const exportStandaloneButton = document.getElementById('export-standalone-button');
 const exportStandaloneStatusDiv = document.getElementById('export-standalone-status');
+const importStandaloneFileInput = document.getElementById('import-standalone-file');
+const importStandaloneButton = document.getElementById('import-standalone-button');
+const importStandaloneStatusDiv = document.getElementById('import-standalone-status');
 
 let originalBudgetData = null; // Store the initially loaded data (Companion Mode)
 let localBudgetData = null; // Store data loaded/managed in Standalone Mode
@@ -282,6 +286,19 @@ function setupStandaloneEventListeners() {
          // Re-enable category form if needed
         addCategoryForm.style.opacity = '1';
         addCategoryForm.querySelectorAll('input, select, button').forEach(el => el.disabled = false);
+    }
+    // --- Import Listeners ---
+    if (importStandaloneFileInput) {
+        importStandaloneFileInput.addEventListener('change', () => {
+            // Enable import button only if a file is selected
+            if (importStandaloneButton) {
+                 importStandaloneButton.disabled = !importStandaloneFileInput.files || importStandaloneFileInput.files.length === 0;
+            }
+            if(importStandaloneStatusDiv) importStandaloneStatusDiv.textContent = ''; // Clear status on new file select
+        });
+    }
+    if (importStandaloneButton) {
+        importStandaloneButton.addEventListener('click', handleStandaloneImport);
     }
 }
 
@@ -1687,7 +1704,7 @@ async function loadPendingTransactionsAndUpdateCount() {
     }
 }
 
-// --- Standalone Mode DB Functions (NEW) ---
+// --- Standalone Mode DB Functions ---
 
 /** Loads all budget data from IndexedDB stores (Standalone Mode). */
 async function loadDataFromDB() {
@@ -1986,6 +2003,247 @@ async function clearAllStandaloneData() {
         transaction.onerror = (event) => {
             console.error("Standalone data clearing transaction error:", event.target.error);
             reject("Failed to clear all standalone data.");
+        };
+    });
+}
+
+/**
+ * Handles the "Import File and Replace Data" button click (Standalone Mode).
+ */
+function handleStandaloneImport() {
+    if (currentMode !== 'standalone' || !importStandaloneFileInput || !importStandaloneStatusDiv) return;
+
+    const file = importStandaloneFileInput.files?.[0];
+
+    if (!file) {
+        importStandaloneStatusDiv.textContent = "Error: No file selected.";
+        importStandaloneStatusDiv.className = 'status-error';
+        return;
+    }
+    if (file.type !== "application/json") {
+        importStandaloneStatusDiv.textContent = `Error: Selected file (${file.name}) is not a JSON file.`;
+        importStandaloneStatusDiv.className = 'status-error';
+        return;
+    }
+
+    importStandaloneStatusDiv.textContent = `Reading file: ${file.name}...`;
+    importStandaloneStatusDiv.className = 'status-info';
+    importStandaloneButton.disabled = true; // Disable while processing
+
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+        const fileContent = e.target.result;
+        let jsonData;
+
+        try {
+            jsonData = JSON.parse(fileContent);
+        } catch (error) {
+            console.error("Error parsing import JSON:", error);
+            importStandaloneStatusDiv.textContent = `Error: Could not parse JSON file. Is it valid? ${error.message}`;
+            importStandaloneStatusDiv.className = 'status-error';
+            importStandaloneButton.disabled = false; // Re-enable button
+            return;
+        }
+
+        // Basic validation
+        if (!validateImportData(jsonData)) {
+             importStandaloneStatusDiv.textContent = `Error: File does not appear to be valid budget data (missing key fields like accounts, transactions, etc.).`;
+             importStandaloneStatusDiv.className = 'status-error';
+             importStandaloneButton.disabled = false;
+             return;
+        }
+
+        // *** CRITICAL: User Confirmation ***
+        if (!confirm("IMPORTANT: Are you sure you want to replace ALL existing data on this device with the content of this file? This cannot be undone.")) {
+            importStandaloneStatusDiv.textContent = "Import cancelled by user.";
+            importStandaloneStatusDiv.className = 'status-info';
+            importStandaloneButton.disabled = false;
+            // Clear file input to force re-selection if they change their mind
+             importStandaloneFileInput.value = null;
+             importStandaloneButton.disabled = true;
+            return;
+        }
+
+        try {
+            // 1. Clear existing data
+            importStandaloneStatusDiv.textContent = "Clearing existing data...";
+            importStandaloneStatusDiv.className = 'status-info';
+            await clearAllStandaloneData(); // We already created this function
+
+            // 2. Write imported data
+            importStandaloneStatusDiv.textContent = "Importing data into database...";
+            await writeImportedDataToDB(jsonData); // Create this function next
+
+             // 3. Reload data and refresh UI
+             importStandaloneStatusDiv.textContent = "Import successful. Reloading view...";
+             importStandaloneStatusDiv.className = 'status-success';
+             await loadDataFromDB(); // Reloads and calls processBudgetData
+
+             // 4. Reset import form
+             importStandaloneFileInput.value = null;
+             importStandaloneButton.disabled = true;
+             // Keep success message for a bit longer?
+             // setTimeout(() => { if(importStandaloneStatusDiv.textContent.includes("successful")) importStandaloneStatusDiv.textContent = ''; }, 5000);
+
+
+        } catch (error) {
+             console.error("Import process failed:", error);
+             importStandaloneStatusDiv.textContent = `Import failed: ${error}`;
+             importStandaloneStatusDiv.className = 'status-error';
+             // Data might be partially cleared/imported - need recovery? Hard to do robustly.
+             // Best bet is to try importing again or starting fresh.
+             importStandaloneButton.disabled = false; // Re-enable button on error
+        }
+    };
+
+    reader.onerror = (e) => {
+        console.error("Error reading import file:", e);
+        importStandaloneStatusDiv.textContent = `Error reading file ${file.name}.`;
+        importStandaloneStatusDiv.className = 'status-error';
+        importStandaloneButton.disabled = false;
+    };
+
+    reader.readAsText(file);
+}
+
+
+/**
+ * Performs basic validation on the structure of imported JSON data.
+ * @param {object} data The parsed JSON data.
+ * @returns {boolean} True if the basic structure seems valid, false otherwise.
+ */
+function validateImportData(data) {
+    if (!data || typeof data !== 'object') return false;
+    const hasAccounts = typeof data.accounts === 'object' && data.accounts !== null;
+    const hasTransactions = Array.isArray(data.transactions);
+    const hasCategories = Array.isArray(data.categories);
+    const hasGroups = typeof data.category_groups === 'object' && data.category_groups !== null;
+    const hasPeriods = typeof data.budget_periods === 'object' && data.budget_periods !== null;
+    // ready_to_assign might be 0 or undefined, so just check its presence is okay
+    const hasRTA = data.hasOwnProperty('ready_to_assign');
+
+    // Require at least accounts and transactions for a minimal valid file
+    return hasAccounts && hasTransactions && hasCategories && hasGroups && hasPeriods && hasRTA;
+}
+
+/**
+ * Writes the structured data from an imported file into the Standalone IndexedDB stores.
+ * ASSUMES `clearAllStandaloneData()` has already been called successfully.
+ * @param {object} importedData The validated budget data object.
+ * @returns {Promise<void>}
+ */
+function writeImportedDataToDB(importedData) {
+    return new Promise(async (resolve, reject) => {
+        if (!db) return reject("Database not initialized for writing.");
+
+        // Get all store names needed for writing
+        const storeNames = [
+            TX_STORE_NAME, ACCOUNT_STORE_NAME, CATEGORY_STORE_NAME,
+            GROUP_STORE_NAME, BUDGET_PERIOD_STORE_NAME, METADATA_STORE_NAME
+        ];
+        const transaction = db.transaction(storeNames, 'readwrite');
+        const stores = {};
+        storeNames.forEach(name => {
+            if (db.objectStoreNames.contains(name)) {
+                stores[name] = transaction.objectStore(name);
+            } else {
+                // This shouldn't happen if initDB ran correctly
+                 console.error(`Store ${name} missing during import write!`);
+                 // Reject immediately if a store is missing
+                 return reject(`Critical Error: Database store ${name} not found.`);
+            }
+        });
+
+        let errorOccurred = false; // Flag to track errors during writes
+
+        try {
+            // 1. Write Transactions
+            // NOTE: As discussed, TX_STORE_NAME uses autoIncrement. We strip the imported ID.
+            // This means relationships based on original IDs will break.
+            // If preserving IDs is essential, TX_STORE_NAME schema must change.
+            for (const tx of importedData.transactions || []) {
+                const { id, ...txToAdd } = tx; // Remove potentially conflicting ID
+                if (txToAdd.amount === undefined || txToAdd.date === undefined || txToAdd.account === undefined || txToAdd.type === undefined || txToAdd.category === undefined) {
+                     console.warn("Skipping transaction with missing essential fields:", tx);
+                     continue; // Skip malformed transactions
+                }
+                 const request = stores[TX_STORE_NAME].add(txToAdd);
+                 request.onerror = (e) => { console.error('Error adding transaction:', txToAdd, e.target.error); errorOccurred = true; };
+            }
+
+            // 2. Write Accounts
+             for (const [accName, balance] of Object.entries(importedData.accounts || {})) {
+                 // Attempt to find account type if the import format includes it (e.g., from a future export improvement)
+                 // For now, assume simple { name: balance } structure and default type.
+                 const accountType = importedData._account_types?.[accName] || 'unknown'; // Example future enhancement
+                 if (typeof accName !== 'string' || typeof balance !== 'number') {
+                      console.warn("Skipping account with invalid name/balance:", accName, balance);
+                      continue;
+                 }
+                 const request = stores[ACCOUNT_STORE_NAME].add({ name: accName, balance: balance, type: accountType });
+                 request.onerror = (e) => { console.error('Error adding account:', accName, e.target.error); errorOccurred = true; };
+             }
+
+             // 3. Write Categories
+             for (const catName of importedData.categories || []) {
+                  if (typeof catName !== 'string' || !catName) {
+                      console.warn("Skipping invalid category name:", catName);
+                      continue;
+                  }
+                 const request = stores[CATEGORY_STORE_NAME].add({ name: catName });
+                  request.onerror = (e) => { console.error('Error adding category:', catName, e.target.error); errorOccurred = true; };
+             }
+
+             // 4. Write Category Groups
+             for (const [catName, groupName] of Object.entries(importedData.category_groups || {})) {
+                 if (typeof catName !== 'string' || !catName || typeof groupName !== 'string' || !groupName) {
+                      console.warn("Skipping invalid category group mapping:", catName, groupName);
+                      continue;
+                 }
+                 const request = stores[GROUP_STORE_NAME].add({ categoryName: catName, groupName: groupName });
+                 request.onerror = (e) => { console.error('Error adding group mapping:', catName, e.target.error); errorOccurred = true; };
+             }
+
+             // 5. Write Budget Periods
+             for (const [period, budgetData] of Object.entries(importedData.budget_periods || {})) {
+                  if (!/^\d{4}-\d{2}$/.test(period) || typeof budgetData !== 'object') {
+                       console.warn("Skipping invalid budget period data:", period, budgetData);
+                       continue;
+                  }
+                 const request = stores[BUDGET_PERIOD_STORE_NAME].add({ period: period, budget: budgetData });
+                  request.onerror = (e) => { console.error('Error adding budget period:', period, e.target.error); errorOccurred = true; };
+             }
+
+             // 6. Write Metadata (Ready to Assign)
+             const rtaValue = typeof importedData.ready_to_assign === 'number' ? importedData.ready_to_assign : 0.0;
+             const metaRequest = stores[METADATA_STORE_NAME].put({ key: 'appData', ready_to_assign: rtaValue });
+             metaRequest.onerror = (e) => { console.error('Error writing metadata (RTA):', e.target.error); errorOccurred = true; };
+
+
+        } catch (loopError) {
+             // Catch errors in the loop logic itself (unlikely with simple adds)
+             console.error("Error during data processing loop:", loopError);
+             errorOccurred = true;
+             transaction.abort(); // Abort if loop fails badly
+             return reject(`Error processing import data: ${loopError.message}`);
+        }
+
+
+        transaction.oncomplete = () => {
+            if (errorOccurred) {
+                 console.warn("Import transaction completed, but some errors occurred during writing.");
+                 // Resolve, but the user should be aware data might be incomplete
+                 resolve(); // Or potentially reject based on how critical partial writes are
+            } else {
+                console.log("Import data write transaction complete.");
+                resolve();
+            }
+        };
+
+        transaction.onerror = (event) => {
+            console.error("Import data write transaction failed:", event.target.error);
+             reject(`Database transaction failed during import: ${event.target.error}`);
         };
     });
 }
