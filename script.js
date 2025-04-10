@@ -107,12 +107,13 @@ function initDB() {
             resolve(db);
         };
 
-        // This event only runs if the database doesn't exist or needs upgrading
         request.onupgradeneeded = (event) => {
             console.log("IndexedDB upgrade needed...");
             let tempDb = event.target.result;
+            const currentVersion = event.oldVersion;
+            console.log(`Upgrading from version ${currentVersion} to ${DB_VERSION}`);
 
-            /// Create pendingTransactions store (if not exists or upgrading from < 1)
+            // Create pendingTransactions store (if not exists or upgrading from < 1)
             if (!tempDb.objectStoreNames.contains(PENDING_TX_STORE_NAME)) {
                 console.log(`Creating object store: ${PENDING_TX_STORE_NAME}`);
                 const txStore = tempDb.createObjectStore(PENDING_TX_STORE_NAME, { keyPath: 'id', autoIncrement: true });
@@ -122,13 +123,14 @@ function initDB() {
 
             // Create pendingCategories store (if not exists or upgrading from < 2)
             if (!tempDb.objectStoreNames.contains(PENDING_CAT_STORE_NAME)) {
-                console.log(`Creating object store: ${PENDING_CAT_STORE_NAME}`);
-                const catStore = tempDb.createObjectStore(PENDING_CAT_STORE_NAME, { keyPath: 'id', autoIncrement: true });
-                // Add index if needed, e.g., by categoryName to check duplicates faster?
-                catStore.createIndex('categoryNameIndex', 'categoryName', { unique: true }); // Make category names unique within pending
-                console.log("Created categoryName index on pending cat store.");
-           }
-             console.log("IndexedDB upgrade complete.");
+                 console.log(`Creating object store: ${PENDING_CAT_STORE_NAME}`);
+                 const catStore = tempDb.createObjectStore(PENDING_CAT_STORE_NAME, { keyPath: 'id', autoIncrement: true });
+                 // Add index if needed, e.g., by categoryName to check duplicates faster?
+                 catStore.createIndex('categoryNameIndex', 'categoryName', { unique: true }); // Make category names unique within pending
+                 console.log("Created categoryName index on pending cat store.");
+            }
+
+            console.log("IndexedDB upgrade complete.");
         };
     });
 }
@@ -311,6 +313,7 @@ async function processBudgetData(data) {
         displayAccountBalances(data.accounts); // Show original balances
         displayRTA(data.ready_to_assign); // Show original RTA
         displayTransactions(originalTransactions, pendingTransactions); // Show combined transactions list
+        displayCategoriesAndGroups(data.categories, data.category_groups, pendingCategories); 
         resetAllFilters();
 
         // --- Calculate and Display Budget View ---
