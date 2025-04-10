@@ -62,20 +62,10 @@ const overlay = document.getElementById('overlay');
 const navLinks = document.querySelectorAll('.nav-link');
 const mainSections = document.querySelectorAll('.main-section'); // Get all sections
 
-const manageCategoriesSection = document.getElementById('manage-categories'); 
-const addCategoryForm = document.getElementById('add-category-form');     
-const newCategoryNameInput = document.getElementById('new-category-name'); 
-const newCategoryGroupInput = document.getElementById('new-category-group'); 
-const addCategoryStatusDiv = document.getElementById('add-category-status'); 
-const categoriesTbody = document.getElementById('categories-tbody');         
-const categoriesNoDataMsg = document.getElementById('categories-no-data'); 
-const existingGroupsDatalist = document.getElementById('existing-groups-list'); 
-
 // --- Define Constants ---
 const DB_NAME = 'budgetAppDB';
-const DB_VERSION = 2; // Increment if you change the schema later
+const DB_VERSION = 1; // Increment if you change the schema later
 const PENDING_TX_STORE_NAME = 'pendingTransactions';
-const PENDING_CAT_STORE_NAME = 'pendingCategories'; 
 const UNKNOWN_INCOME_SOURCE = "Unknown Income Source";
 const UNCATEGORIZED = "Uncategorized";
 const SAVINGS_GROUP_NAME = "Savings Goals";
@@ -107,30 +97,24 @@ function initDB() {
             resolve(db);
         };
 
+        // This event only runs if the database doesn't exist or needs upgrading
         request.onupgradeneeded = (event) => {
             console.log("IndexedDB upgrade needed...");
             let tempDb = event.target.result;
-            const currentVersion = event.oldVersion;
-            console.log(`Upgrading from version ${currentVersion} to ${DB_VERSION}`);
 
-            // Create pendingTransactions store (if not exists or upgrading from < 1)
+            // Create the object store for pending transactions
+            // Use autoIncrementing key for simplicity
             if (!tempDb.objectStoreNames.contains(PENDING_TX_STORE_NAME)) {
                 console.log(`Creating object store: ${PENDING_TX_STORE_NAME}`);
-                const txStore = tempDb.createObjectStore(PENDING_TX_STORE_NAME, { keyPath: 'id', autoIncrement: true });
-                txStore.createIndex('dateIndex', 'date', { unique: false });
-                console.log("Created date index on pending tx store.");
+                const store = tempDb.createObjectStore(PENDING_TX_STORE_NAME, {
+                    keyPath: 'id', // Use 'id' as the primary key
+                    autoIncrement: true // Automatically generate unique IDs
+                });
+                // Optional: Create indexes for faster searching if needed (e.g., by date)
+                 store.createIndex('dateIndex', 'date', { unique: false });
+                 console.log("Created date index on pending store.");
             }
-
-            // Create pendingCategories store (if not exists or upgrading from < 2)
-            if (!tempDb.objectStoreNames.contains(PENDING_CAT_STORE_NAME)) {
-                 console.log(`Creating object store: ${PENDING_CAT_STORE_NAME}`);
-                 const catStore = tempDb.createObjectStore(PENDING_CAT_STORE_NAME, { keyPath: 'id', autoIncrement: true });
-                 // Add index if needed, e.g., by categoryName to check duplicates faster?
-                 catStore.createIndex('categoryNameIndex', 'categoryName', { unique: true }); // Make category names unique within pending
-                 console.log("Created categoryName index on pending cat store.");
-            }
-
-            console.log("IndexedDB upgrade complete.");
+             console.log("IndexedDB upgrade complete.");
         };
     });
 }
@@ -288,17 +272,14 @@ async function processBudgetData(data) {
     originalBudgetData = JSON.parse(JSON.stringify(data));
 
     try {
-        const pendingTransactions = await loadPendingTransactions();
-        const pendingCategories = await loadPendingCategories(); 
-        updatePendingCountUI(pendingTransactions.length, pendingCategories.length);
-
-        // Populate filters, passing pending categories so dropdowns are up-to-date
+        // (Keep filter population, pending transaction loading, etc.)
         populateAccountFilter(data.accounts, [filterAccountSelect, txAccountSelect]);
-        populateCategoryFilter(data.categories, data.transactions, pendingCategories, [filterCategorySelect, txCategorySelect]);
-        populateGroupDatalist(data.category_groups, pendingCategories); // Populate group suggestions
-
+        populateCategoryFilter(data.categories, data.transactions, [filterCategorySelect, txCategorySelect]);
+        const pendingTransactions = await loadPendingTransactions();
+        updatePendingCountUI(pendingTransactions.length);
         const originalTransactions = data.transactions || [];
         const allTransactionsForDisplay = [...originalTransactions, ...pendingTransactions];
+
         const latestMonth = findLatestMonth(originalTransactions) || findLatestMonth(pendingTransactions);
 
          // --- Display Dashboard Summary ---
@@ -313,7 +294,6 @@ async function processBudgetData(data) {
         displayAccountBalances(data.accounts); // Show original balances
         displayRTA(data.ready_to_assign); // Show original RTA
         displayTransactions(originalTransactions, pendingTransactions); // Show combined transactions list
-        displayCategoriesAndGroups(data.categories, data.category_groups, pendingCategories); 
         resetAllFilters();
 
         // --- Calculate and Display Budget View ---
@@ -377,153 +357,6 @@ async function processBudgetData(data) {
 }
 
 // --- Budget Calculation Helper Functions ---
-/**
- * Displays the categories and their groups in the table.
- * @param {Array} originalCategories Array of category names.
- * @param {object} originalGroups Mapping of category name to group name.
- * @param {Array} pendingCategories Array of pending category objects.
- */
-function displayCategoriesAndGroups(originalCategories = [], originalGroups = {}, pendingCategories = []) {
-    if (!categoriesTbody) return;
-    categoriesTbody.innerHTML = ''; // Clear previous entries
-    if (categoriesNoDataMsg) categoriesNoDataMsg.classList.add('hidden');
-
-    const combinedMap = new Map(); // Use a Map to handle potential overrides and ensure uniqueness
-
-    // Add original categories/groups
-    originalCategories.forEach(catName => {
-        if (catName) { // Ensure not empty
-            combinedMap.set(catName, {
-                group: originalGroups[catName] || 'Unassigned',
-                isPending: false
-            });
-        }
-    });
-
-    // Add/Update with pending categories
-    pendingCategories.forEach(pending => {
-        combinedMap.set(pending.categoryName, {
-            group: pending.groupName || 'Unassigned',
-            isPending: true
-        });
-    });
-
-    if (combinedMap.size === 0) {
-        categoriesTbody.innerHTML = '<tr><td colspan="3">No categories found.</td></tr>';
-         if (categoriesNoDataMsg) categoriesNoDataMsg.classList.remove('hidden');
-        return;
-    }
-
-    // Sort categories alphabetically for display
-    const sortedCategories = Array.from(combinedMap.keys()).sort((a, b) => a.localeCompare(b));
-
-    sortedCategories.forEach(catName => {
-        const data = combinedMap.get(catName);
-        const row = categoriesTbody.insertRow();
-
-        const cellName = row.insertCell();
-        cellName.textContent = catName;
-
-        const cellGroup = row.insertCell();
-        cellGroup.textContent = data.group;
-
-        const cellStatus = row.insertCell();
-        cellStatus.textContent = data.isPending ? 'Pending' : 'Saved';
-        if (data.isPending) {
-            cellStatus.classList.add('status-pending');
-        }
-    });
-}
-
-/**
- * Populates category filter dropdown(s), including pending categories.
- * @param {Array} categories Original categories array [categoryName1, ...].
- * @param {Array} transactions Transaction list (used to find implicit categories).
- * @param {Array} pendingCategories Array of pending category objects.
- * @param {Array<HTMLSelectElement>} selectElements Array of select elements to populate.
- */
-function populateCategoryFilter(categories = [], transactions = [], pendingCategories = [], selectElements = []) {
-    if (!categories && !transactions && !pendingCategories) return;
-
-    const categorySet = new Set(categories);
-    transactions.forEach(tx => {
-        if (tx.category) categorySet.add(tx.category);
-        // ... (keep uncategorized logic if needed)
-    });
-
-    // Add pending categories to the set
-    pendingCategories.forEach(pending => categorySet.add(pending.categoryName));
-
-    // Remove internal/special categories if necessary
-    categorySet.delete(UNKNOWN_INCOME_SOURCE);
-
-    let allCategoryNames = Array.from(categorySet).filter(name => name).sort(); // Filter out empty names
-
-    selectElements.forEach(select => {
-        console.log("Populating filter for:", select);
-        if (!select || typeof select.options === 'undefined' || select.tagName !== 'SELECT') {
-            console.warn("populateCategoryFilter: Skipping invalid element passed in selectElements array:", select);
-            return; // Skip this iteration if 'select' is null, undefined, or not actually a SELECT element
-        }
-        const currentVal = select.value; // Preserve current selection if possible
-        const firstOptionText = select.options.length > 0 ? select.options[0].text : ""; 
-        select.length = 0;
-
-        if (firstOptionText.toLowerCase().includes("all") || firstOptionText.toLowerCase().includes("select")) {
-            const defaultOption = document.createElement('option');
-            defaultOption.value = "";
-            defaultOption.textContent = firstOptionText;
-            select.appendChild(defaultOption);
-        }
-
-        let categoryNamesForSelect = [...allCategoryNames]; // Copy
-        // Apply specific filtering logic (e.g., for add form)
-        if (select.id === 'tx-category') {
-            const originalGroups = originalBudgetData?.category_groups || {};
-            // Need to consider pending groups as well if filtering by group status
-            const pendingGroupsMap = new Map(pendingCategories.map(p => [p.categoryName, p.groupName]));
-
-            categoryNamesForSelect = categoryNamesForSelect.filter(cat => {
-                const groupName = pendingGroupsMap.get(cat) ?? originalGroups[cat]; // Get pending group first
-                 return groupName !== SAVINGS_GROUP_NAME && groupName !== ARCHIVED_GROUP_NAME;
-            });
-        }
-
-        categoryNamesForSelect.forEach(name => {
-            const option = document.createElement('option');
-            option.value = name;
-            option.textContent = name;
-            select.appendChild(option);
-        });
-         select.value = currentVal; // Try to restore selection
-    });
-}
-
-/**
- * Populates the datalist for group name suggestions.
- * @param {object} originalGroups Original category groups mapping.
- * @param {Array} pendingCategories Pending category objects.
- */
-function populateGroupDatalist(originalGroups = {}, pendingCategories = []) {
-    if (!existingGroupsDatalist) return;
-    existingGroupsDatalist.innerHTML = ''; // Clear existing options
-    const groupSet = new Set();
-
-    Object.values(originalGroups).forEach(group => { if(group) groupSet.add(group); });
-    pendingCategories.forEach(pending => { if(pending.groupName) groupSet.add(pending.groupName); });
-
-    // Filter out special groups maybe?
-    groupSet.delete(SAVINGS_GROUP_NAME);
-    groupSet.delete(ARCHIVED_GROUP_NAME);
-
-    const sortedGroups = Array.from(groupSet).sort();
-
-    sortedGroups.forEach(groupName => {
-        const option = document.createElement('option');
-        option.value = groupName;
-        existingGroupsDatalist.appendChild(option);
-    });
-}
 
 /**
  * Gets the previous month's period string (YYYY-MM).
@@ -1352,91 +1185,11 @@ function clearPendingTransactions() {
     });
 }
 
-/**
- * Saves a single pending category to IndexedDB.
- * @param {object} categoryData The category object {categoryName, groupName}.
- */
-function savePendingCategory(categoryData) {
-    return new Promise(async (resolve, reject) => {
-        if (!db) try { await initDB(); } catch (err) { return reject("DB Error"); }
-
-        const categoryToAdd = {
-            categoryName: categoryData.categoryName.trim(),
-            groupName: categoryData.groupName.trim() || 'Unassigned', // Default group
-            entry_timestamp: new Date().toISOString(),
-        };
-
-        const tx = db.transaction(PENDING_CAT_STORE_NAME, 'readwrite');
-        const store = tx.objectStore(PENDING_CAT_STORE_NAME);
-        const request = store.add(categoryToAdd); // Uses unique index on categoryName
-
-        request.onsuccess = (event) => {
-            console.log("Pending category saved successfully to IDB, ID:", event.target.result);
-            resolve(event.target.result);
-        };
-        request.onerror = (event) => {
-             // Handle specific errors, like constraint errors (duplicate category name)
-            if (event.target.error.name === 'ConstraintError') {
-                 console.warn("Attempted to add duplicate pending category name:", categoryToAdd.categoryName);
-                 reject(`Category '${categoryToAdd.categoryName}' already exists or is pending.`);
-            } else {
-                console.error("Error saving pending category:", event.target.error);
-                reject("Error saving category.");
-            }
-        };
-    });
+// --- Add Form Handling ---
+if (newTxForm) {
+    newTxForm.addEventListener('submit', handleAddTransaction);
 }
 
-/**
- * Loads all pending categories from IndexedDB.
- * @returns {Promise<Array>} A promise that resolves with an array of pending category objects.
- */
-function loadPendingCategories() {
-    return new Promise(async (resolve, reject) => {
-        if (!db) try { await initDB(); } catch (err) { return reject("DB Error"); }
-
-        const tx = db.transaction(PENDING_CAT_STORE_NAME, 'readonly');
-        const store = tx.objectStore(PENDING_CAT_STORE_NAME);
-        const request = store.getAll();
-
-        request.onsuccess = (event) => {
-            console.log(`Loaded ${event.target.result.length} pending categories.`);
-            resolve(event.target.result || []);
-        };
-        request.onerror = (event) => {
-            console.error("Error loading pending categories:", event.target.error);
-            reject("Error loading categories.");
-        };
-    });
-}
-
-/**
- * Clears all pending categories from IndexedDB.
- */
-function clearPendingCategories() {
-    return new Promise(async (resolve, reject) => {
-        if (!db) try { await initDB(); } catch (err) { return reject("DB Error"); }
-
-        const tx = db.transaction(PENDING_CAT_STORE_NAME, 'readwrite');
-        const store = tx.objectStore(PENDING_CAT_STORE_NAME);
-        const request = store.clear();
-
-        request.onsuccess = () => {
-            console.log("Pending categories cleared from IndexedDB.");
-            resolve();
-        };
-        request.onerror = (event) => {
-            console.error("Error clearing pending categories:", event.target.error);
-            reject("Error clearing categories.");
-        };
-    });
-}
-
-// --- Event Listeners ---
-if (newTxForm) newTxForm.addEventListener('submit', handleAddTransaction);
-if (addCategoryForm) addCategoryForm.addEventListener('submit', handleAddCategory); 
-
-// --- Form Handling ---
 /**
  * Handles the submission of the new transaction form.
  * @param {Event} event The form submission event.
@@ -1503,83 +1256,13 @@ async function handleAddTransaction(event) {
     }
 }
 
-/**
- * Handles the submission of the new category form.
- * @param {Event} event The form submission event.
- */
-async function handleAddCategory(event) {
-    event.preventDefault();
-    if (!addCategoryStatusDiv) return;
-
-    addCategoryStatusDiv.textContent = "Adding category...";
-    addCategoryStatusDiv.className = 'status-info';
-
-    const categoryName = newCategoryNameInput.value.trim();
-    const groupName = newCategoryGroupInput.value.trim();
-
-    if (!categoryName || !groupName) {
-        addCategoryStatusDiv.textContent = "Error: Both Category Name and Group Name are required.";
-        addCategoryStatusDiv.className = 'status-error';
-        return;
-    }
-
-    // Optional: Basic check against existing *original* categories (more robust check happens in savePendingCategory with index)
-    if (originalBudgetData?.categories.includes(categoryName)) {
-         addCategoryStatusDiv.textContent = `Warning: Category '${categoryName}' already exists in original data. Still adding as pending.`;
-         addCategoryStatusDiv.className = 'status-info'; // Or maybe 'status-error' if you want to prevent?
-         // return; // Uncomment to prevent adding duplicates of original data
-    }
-
-    try {
-        const newCategoryData = { categoryName, groupName };
-        await savePendingCategory(newCategoryData);
-
-        // Update UI immediately
-        const updatedPendingCategories = await loadPendingCategories();
-        const updatedPendingTx = await loadPendingTransactions(); // Load tx too for count update
-
-        // 1. Refresh Category Table
-        displayCategoriesAndGroups(originalBudgetData?.categories || [], originalBudgetData?.category_groups || {}, updatedPendingCategories);
-
-        // 2. Refresh Category Dropdowns in other forms/filters
-        populateCategoryFilter(originalBudgetData?.categories || [], originalBudgetData?.transactions || [], updatedPendingCategories, [filterCategorySelect, txCategorySelect]);
-
-        // 3. Refresh Group Datalist (in case a new group was added)
-        populateGroupDatalist(originalBudgetData?.category_groups || {}, updatedPendingCategories);
-
-        // 4. Update pending counts
-        updatePendingCountUI(updatedPendingTx.length, updatedPendingCategories.length);
-
-
-        // 5. Clear the form
-        addCategoryForm.reset();
-
-        // 6. Update status
-        addCategoryStatusDiv.textContent = "Category added locally.";
-        addCategoryStatusDiv.className = 'status-success';
-
-    } catch (error) {
-        console.error("Failed to add category:", error);
-        addCategoryStatusDiv.textContent = `Error: ${error}`; // Show specific error (e.g., duplicate)
-        addCategoryStatusDiv.className = 'status-error';
-    }
-}
-
 // --- Sync Section Handling ---
 
 /** Updates the pending count display and button states. */
-function updatePendingCountUI(txCount, catCount = 0) { // Add catCount parameter
-    const totalPending = txCount + catCount;
-    if (pendingCountSpan) pendingCountSpan.textContent = totalPending;
-    if (exportDataButton) exportDataButton.disabled = totalPending === 0;
-    if (clearPendingButton) clearPendingButton.disabled = totalPending === 0;
-
-    // Update specific text (optional)
-    let countText = '';
-    if (txCount > 0) countText += `${txCount} transaction(s)`;
-    if (txCount > 0 && catCount > 0) countText += ' and ';
-    if (catCount > 0) countText += `${catCount} category change(s)`;
-    if (totalPending === 0) countText = '0 items';
+function updatePendingCountUI(count) {
+    if (pendingCountSpan) pendingCountSpan.textContent = count;
+    if (exportDataButton) exportDataButton.disabled = count === 0;
+    if (clearPendingButton) clearPendingButton.disabled = count === 0;
 }
 
 if(exportDataButton) {
@@ -1619,37 +1302,19 @@ async function handleExportData() {
     updateExportStatus("Preparing export...", "info");
 
     try {
-         // 1. Load BOTH pending transactions and categories
-         const pendingTransactions = await loadPendingTransactions();
-         const pendingCategories = await loadPendingCategories();
+        // 1. Load pending transactions from IndexedDB
+        const pendingTransactions = await loadPendingTransactions();
 
         // Check if there's anything to export
-        if (pendingTransactions.length === 0 && pendingCategories.length === 0) {
-            updateExportStatus("No pending changes to export.", "info");
-            return;
+        if (pendingTransactions.length === 0) {
+            updateExportStatus("No pending transactions to export.", "info");
+            return; // Nothing to do
         }
 
         // 2. Create a deep copy of the original data to modify safely
         let finalData = JSON.parse(JSON.stringify(originalBudgetData));
-        
-        // 3. Merge Pending Categories FIRST (before transactions might use them)
-        const originalCategorySet = new Set(finalData.categories);
-        pendingCategories.forEach(pendingCat => {
-             // Add to categories list if it's truly new
-             if (!originalCategorySet.has(pendingCat.categoryName)) {
-                 finalData.categories.push(pendingCat.categoryName);
-                 originalCategorySet.add(pendingCat.categoryName); // Add to set to track
-                 console.log(`Export: Added new category '${pendingCat.categoryName}'`);
-             } else {
-                  console.log(`Export: Category '${pendingCat.categoryName}' already exists, updating group.`);
-             }
-             // Assign/Overwrite group mapping
-             finalData.category_groups[pendingCat.categoryName] = pendingCat.groupName || 'Unassigned';
-        });
-        // Optional: Sort categories list after adding new ones
-        finalData.categories.sort();
 
-        // 4. Merge Pending Transactions and Recalculate State
+        // 3. Merge pending transactions and recalculate state
         pendingTransactions.forEach(pendingTx => {
             // a) Destructure temporary 'status' field, keep the rest
             const { status, ...txDataFromDB } = pendingTx;
@@ -1698,12 +1363,12 @@ async function handleExportData() {
 
         }); // End forEach loop
 
-        // 5. Prepare JSON and trigger download
+        // 4. Prepare the final JSON file for download
         const jsonDataString = JSON.stringify(finalData, null, 4); // Pretty print JSON
         const blob = new Blob([jsonDataString], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
 
-        // Create a temporary link and trigger the download
+        // 5. Create a temporary link and trigger the download
         const a = document.createElement('a');
         a.href = url;
         // Create a filename with a timestamp for clarity
@@ -1712,11 +1377,11 @@ async function handleExportData() {
         document.body.appendChild(a); // Link needs to be in the document to be clicked programmatically
         a.click(); // Simulate a click to trigger download
 
-        // Clean up the temporary link and object URL
+        // 6. Clean up the temporary link and object URL
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        // Update status message
+        // 7. Update status message
         updateExportStatus("Export file generated. Please save it and use it to replace your original file.", "success");
 
         // 8. IMPORTANT: Do NOT automatically clear pending items here.
@@ -1734,34 +1399,21 @@ async function handleExportData() {
  * Handles the clear pending button click.
  */
 async function handleClearPending() {
-    if (confirm("Are you sure you want to clear ALL locally saved, unsynced transactions AND category changes? This cannot be undone.")) 
-    {
-        updateExportStatus("Clearing pending entries...", "info");
+    if (confirm("Are you sure you want to clear all locally saved, unsynced transactions? This cannot be undone.")) {
+         updateExportStatus("Clearing pending entries...", "info");
          try {
-            await Promise.all([ // Run clears in parallel
-                clearPendingTransactions(),
-                clearPendingCategories()
-            ]);
-            updatePendingCountUI(0, 0); // Reset counts
-
-            // Re-render relevant UI elements without pending items
-            displayTransactions(originalBudgetData?.transactions || [], []);
-            displayCategoriesAndGroups(originalBudgetData?.categories || [], originalBudgetData?.category_groups || {}, []);
-            populateCategoryFilter(originalBudgetData?.categories || [], originalBudgetData?.transactions || [], [], [filterCategorySelect, txCategorySelect]);
-            populateGroupDatalist(originalBudgetData?.category_groups || {}, []);
-
-
-            updateExportStatus("Pending entries cleared.", "success");
-            addTxStatusDiv.textContent = ""; // Clear other status divs too
-            addCategoryStatusDiv.textContent = "";
-
-        } catch (error) {
-            console.error("Failed to clear pending:", error);
-            updateExportStatus(`Error clearing pending entries: ${error}`, "error");
-        }
+             await clearPendingTransactions();
+             updatePendingCountUI(0);
+             // Re-render the transaction list without pending items
+             displayTransactions(originalBudgetData?.transactions || [], []);
+             updateExportStatus("Pending entries cleared.", "success");
+             addTxStatusDiv.textContent = ""; // Clear add form status too
+         } catch (error) {
+              console.error("Failed to clear pending:", error);
+             updateExportStatus(`Error clearing pending entries: ${error}`, "error");
+         }
     }
 }
-
 
 /** Updates the export status message area */
 function updateExportStatus(message, type = "info") {
