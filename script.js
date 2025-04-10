@@ -608,7 +608,7 @@ function populateCategoryGroupDropdown(groupsData = {}, categories = []) {
 }
 
 /**
- * Displays existing categories, grouped visually, in the Manage Categories section.
+ * Displays existing categories, grouped visually, with controls to change groups.
  * @param {Array<string>} categories List of category names.
  * @param {object} groupsData The category groups object { categoryName: groupName }.
  */
@@ -621,26 +621,31 @@ function displayExistingCategories(categories = [], groupsData = {}) {
         return;
     }
 
-    // Group categories by their group name
+    // --- Get list of available group names (for the dropdowns) ---
+    const availableGroups = new Set();
+    Object.values(groupsData).forEach(group => { if(group) availableGroups.add(group); });
+     // Add common default groups if they aren't already present from data
+     ['Income', 'Expenses', 'Bills', 'Savings Goals', 'Archived'].forEach(g => availableGroups.add(g));
+     availableGroups.delete(null); // Remove null/undefined if present
+     availableGroups.delete(undefined);
+    const sortedAvailableGroups = Array.from(availableGroups).sort();
+    // --- --- ---
+
     const categoriesByGroup = {};
     categories.forEach(cat => {
-        const group = groupsData[cat] || 'Unassigned'; // Default to 'Unassigned' if no group
+        const group = groupsData[cat] || 'Unassigned';
         if (!categoriesByGroup[group]) {
             categoriesByGroup[group] = [];
         }
         categoriesByGroup[group].push(cat);
     });
 
-    // Sort group names (with 'Unassigned' maybe last?)
-    const sortedGroupNames = Object.keys(categoriesByGroup).sort((a, b) => {
-        if (a === 'Unassigned') return 1; // Push Unassigned to the end
-        if (b === 'Unassigned') return -1;
-        // Sort standard groups like Savings Goals/Archived last? (optional)
+    const sortedGroupNames = Object.keys(categoriesByGroup).sort((a, b) => { /* ... keep existing sort logic ... */
+        if (a === 'Unassigned') return 1; if (b === 'Unassigned') return -1;
         const order = { "Savings Goals": 1, "Archived": 2 };
-        const orderA = order[a] || 0;
-        const orderB = order[b] || 0;
+        const orderA = order[a] || 0; const orderB = order[b] || 0;
         if (orderA !== orderB) return orderA - orderB;
-        return a.localeCompare(b); // Alphabetical otherwise
+        return a.localeCompare(b);
     });
 
     // Create HTML for each group
@@ -655,12 +660,157 @@ function displayExistingCategories(categories = [], groupsData = {}) {
         const categoryList = document.createElement('ul');
         categoriesByGroup[groupName].sort().forEach(catName => { // Sort categories within group
             const listItem = document.createElement('li');
-            listItem.textContent = catName;
+            listItem.classList.add('category-list-item'); // Add class for styling/selection
+
+            // 1. Category Name Span
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = catName;
+            nameSpan.className = 'category-name';
+            listItem.appendChild(nameSpan);
+
+            // 2. Group Selection Dropdown
+            const groupSelect = document.createElement('select');
+            groupSelect.className = 'category-group-changer';
+            groupSelect.dataset.categoryName = catName; // Store category name for the handler
+
+            // Add options to the dropdown
+            sortedAvailableGroups.forEach(availGroup => {
+                const option = new Option(availGroup, availGroup);
+                if (availGroup === (groupsData[catName] || '')) { // Select the current group
+                    option.selected = true;
+                }
+                groupSelect.add(option);
+            });
+             // Add "Unassigned" option if it wasn't in the main list
+             if (!sortedAvailableGroups.includes('Unassigned')) {
+                 const unassignedOption = new Option('Unassigned', ''); // Use empty value for Unassigned
+                 if (groupName === 'Unassigned') {
+                     unassignedOption.selected = true;
+                 }
+                 groupSelect.add(unassignedOption);
+             }
+
+            listItem.appendChild(groupSelect);
+
+            // 3. Change Button
+            const changeButton = document.createElement('button');
+            changeButton.textContent = 'Update';
+            changeButton.className = 'button button-small category-group-update-button';
+            changeButton.dataset.categoryName = catName; // Store category name
+            changeButton.addEventListener('click', handleChangeCategoryGroup); // Attach listener directly
+            listItem.appendChild(changeButton);
+
+            // 4. Status Div (Optional, for feedback per item)
+            const itemStatusDiv = document.createElement('div');
+            itemStatusDiv.className = 'item-status';
+            itemStatusDiv.id = `status-cat-${catName.replace(/\s+/g, '-')}`; // Unique ID for status
+            listItem.appendChild(itemStatusDiv);
+
+
             categoryList.appendChild(listItem);
         });
         groupDiv.appendChild(categoryList);
 
         existingCategoriesListDiv.appendChild(groupDiv);
+    });
+}
+
+/**
+ * Handles the click event for the "Update" button next to an existing category.
+ * @param {Event} event The button click event.
+ */
+async function handleChangeCategoryGroup(event) {
+    event.preventDefault();
+    if (currentMode !== 'standalone') return; // Safety check
+
+    const button = event.currentTarget;
+    const categoryName = button.dataset.categoryName;
+    const listItem = button.closest('.category-list-item'); // Find parent li
+    const groupSelect = listItem?.querySelector('.category-group-changer');
+    const itemStatusDiv = listItem?.querySelector('.item-status'); // Find the status div for this item
+
+    if (!categoryName || !groupSelect || !itemStatusDiv) {
+        console.error("Could not find necessary elements for group change.");
+        return;
+    }
+
+    const newGroupName = groupSelect.value; // Empty string means "Unassigned"
+
+    itemStatusDiv.textContent = "Updating...";
+    itemStatusDiv.className = 'item-status info';
+    button.disabled = true; // Prevent double-clicks
+
+    try {
+        await updateCategoryGroup(categoryName, newGroupName); // Call DB function
+
+        itemStatusDiv.textContent = "Group updated!";
+        itemStatusDiv.className = 'item-status'; // Default success style
+        // Update in-memory data for immediate reflection if not reloading everything
+        if (localBudgetData && localBudgetData.category_groups) {
+             if (newGroupName === '') { // If unassigned
+                 delete localBudgetData.category_groups[categoryName];
+             } else {
+                 localBudgetData.category_groups[categoryName] = newGroupName;
+             }
+        }
+
+        await loadDataFromDB(); // This will re-render the list
+
+    } catch (error) {
+        console.error(`Failed to update group for ${categoryName}:`, error);
+        itemStatusDiv.textContent = `Error: ${error}`;
+        itemStatusDiv.className = 'item-status error';
+        button.disabled = false; // Re-enable button on error
+    } finally {
+         // If NOT using loadDataFromDB, ensure button is re-enabled and status cleared eventually
+         // setTimeout(() => { itemStatusDiv.textContent = ''; button.disabled = false; }, 4000);
+    }
+}
+
+/**
+ * Updates the group assignment for an existing category in IndexedDB (Standalone Mode).
+ * Uses 'put' which handles both adding and updating.
+ * @param {string} categoryName The name of the category to update.
+ * @param {string} newGroupName The new group name (empty string means unassigned/remove mapping).
+ * @returns {Promise<void>}
+ */
+function updateCategoryGroup(categoryName, newGroupName) {
+    return new Promise(async (resolve, reject) => {
+        if (!db) return reject("Database not initialized.");
+
+        const transaction = db.transaction([GROUP_STORE_NAME], 'readwrite');
+        const grpStore = transaction.objectStore(GROUP_STORE_NAME);
+
+        let dbOperation;
+
+        if (newGroupName === '') {
+            // If setting to "Unassigned", we DELETE the mapping
+            console.log(`Removing group assignment for category: ${categoryName}`);
+            dbOperation = grpStore.delete(categoryName); // Use delete with the key
+        } else {
+            // Otherwise, we ADD or UPDATE the mapping using put
+            console.log(`Updating group for category: ${categoryName} to ${newGroupName}`);
+            const groupMapping = { categoryName: categoryName, groupName: newGroupName };
+            dbOperation = grpStore.put(groupMapping); // Use put for add/update
+        }
+
+        dbOperation.onerror = (event) => {
+            console.error("Error updating/deleting category group mapping in DB:", event.target.error);
+            transaction.abort();
+            reject(`Failed to update group assignment: ${event.target.error}`);
+        };
+        dbOperation.onsuccess = () => {
+            console.log(`Group assignment for '${categoryName}' processed successfully.`);
+        };
+
+        transaction.oncomplete = () => {
+            console.log("Update category group transaction complete.");
+            resolve();
+        };
+        transaction.onerror = (event) => {
+            console.error("Update category group transaction failed:", event.target.error);
+            reject(`Transaction failed: ${event.target.error}`);
+        };
     });
 }
 

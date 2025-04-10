@@ -657,4 +657,54 @@ footer {
         font-size: 0.95em;
     }
     
+    .category-list-item {
+        display: flex; /* Use flexbox for alignment */
+        align-items: center; /* Vertically align items */
+        justify-content: space-between; /* Space out elements */
+        padding: 5px 0;
+        border-bottom: 1px dotted #eee; /* Separator */
+        flex-wrap: wrap; /* Allow wrapping on small screens */
+        gap: 10px; /* Add gap between items */
+    }
+    
+    .category-list-item:last-child {
+        border-bottom: none;
+    }
+    
+    .category-list-item .category-name {
+        flex-grow: 1; /* Allow name to take up space */
+        font-weight: 500;
+        min-width: 120px; /* Ensure name has some minimum width */
+    }
+    
+    .category-list-item .category-group-changer {
+        padding: 4px 6px;
+        font-size: 0.9em;
+        border: 1px solid #ccc;
+        border-radius: 3px;
+        min-width: 150px; /* Give dropdown enough width */
+        flex-shrink: 0; /* Prevent dropdown from shrinking too much */
+    }
+    
+    .category-list-item .button-small { /* Make button less imposing */
+        padding: 3px 8px;
+        font-size: 0.85em;
+        flex-shrink: 0;
+    }
+    
+    .category-list-item .item-status {
+        font-size: 0.8em;
+        margin-left: 10px; /* Space status message */
+        flex-basis: 100%; /* Let status take full width on wrap */
+        text-align: right;
+        min-height: 1.2em; /* Reserve space even when empty */
+         color: #155724; /* Default to success color */
+    }
+    .category-list-item .item-status.error {
+         color: #721c24; /* Error color */
+    }
+    .category-list-item .item-status.info {
+         color: #004085; /* Info color */
+    }
+    
 }
