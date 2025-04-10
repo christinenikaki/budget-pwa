@@ -460,9 +460,13 @@ function populateCategoryFilter(categories = [], transactions = [], pendingCateg
     let allCategoryNames = Array.from(categorySet).filter(name => name).sort(); // Filter out empty names
 
     selectElements.forEach(select => {
-        if (!select) return;
+        console.log("Populating filter for:", select);
+        if (!select || typeof select.options === 'undefined' || select.tagName !== 'SELECT') {
+            console.warn("populateCategoryFilter: Skipping invalid element passed in selectElements array:", select);
+            return; // Skip this iteration if 'select' is null, undefined, or not actually a SELECT element
+        }
         const currentVal = select.value; // Preserve current selection if possible
-        const firstOptionText = select.options.length > 0 ? select.options[0].text : "";
+        const firstOptionText = select.options.length > 0 ? select.options[0].text : ""; 
         select.length = 0;
 
         if (firstOptionText.toLowerCase().includes("all") || firstOptionText.toLowerCase().includes("select")) {
