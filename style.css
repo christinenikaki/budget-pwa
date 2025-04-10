@@ -463,6 +463,35 @@ footer {
     text-align: left;
 }
 
+#budget-table tbody tr.budget-group-header td {
+    background-color: #f0f0f0; /* Slightly different background */
+    font-weight: bold;
+    color: #444;
+    padding-top: 12px;      /* More space above group name */
+    padding-bottom: 6px;
+    padding-left: 8px;      /* Align with other cells */
+    border-top: 2px solid #ccc; /* Strong separator above */
+    border-bottom: 1px solid #ddd; /* Line below header */
+    text-align: left;       /* Explicitly left-align */
+    font-size: 0.95em;      /* Slightly smaller than main headers */
+}
+
+/* Remove top border from the very first group header */
+#budget-table tbody tr.budget-group-header:first-child td {
+    border-top: none;
+}
+
+/* Optional: Add a little space between header and first data row */
+#budget-table tbody tr.budget-group-header + tr td {
+     padding-top: 8px;
+}
+
+/* Ensure category name cell still looks okay */
+#budget-table tbody td:first-child {
+    /* padding-left: 10px; /* Optional indent for categories */
+}
+
+
 /* Style for savings goal rows */
 #budget-tbody tr.savings-goal-row td {
     background-color: #e8f5e9;

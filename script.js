@@ -1039,7 +1039,7 @@ function calculateBudgetViewData(period, categories = [], budgetPeriodsData = {}
     console.log(`Previous Period: ${previousPeriod}`);
 
     displayCategories.forEach(cat => {
-        const group = groupsData[cat];
+        const group = groupsData[cat] || 'Unassigned'; // Use 'Unassigned' if no group found
         const isArchived = group === ARCHIVED_GROUP_NAME;
         const isSavingsGoal = group === SAVINGS_GROUP_NAME;
 
@@ -1063,6 +1063,7 @@ function calculateBudgetViewData(period, categories = [], budgetPeriodsData = {}
 
         budgetRows.push({
             name: cat,
+            group: group, 
             prev_avail: prevAvailable,
             budgeted: budgeted,
             spent: spent, // This is 'Activity'
@@ -1115,38 +1116,90 @@ function renderBudgetTable(budgetRows, totals, period, titleSuffix = "") {
     if (!budgetTbody || !budgetRows || budgetRows.length === 0) {
          if (budgetNoDataMsg) budgetNoDataMsg.classList.remove('hidden');
         console.warn("No budget rows to render for period:", period);
-        return;
+        // Clear totals explicitly if no rows
+        if (totalBudgetedValueTd) totalBudgetedValueTd.textContent = formatCurrency(0);
+        if (totalSpentValueTd) totalSpentValueTd.textContent = formatCurrency(0);
+        if (totalAvailableValueTd) totalAvailableValueTd.textContent = formatCurrency(0);
+        return;        return;
     }
 
-    budgetRows.forEach(row => {
-        const tr = budgetTbody.insertRow();
-        if (row.is_savings_goal) {
-            tr.classList.add('savings-goal-row'); // Add class for styling
-        }
+ // --- NEW: Group rows by category group ---
+ const rowsByGroup = {};
+ budgetRows.forEach(row => {
+     // Use the group property added in calculateBudgetViewData
+     const group = row.group || 'Unassigned';
+     if (!rowsByGroup[group]) {
+         rowsByGroup[group] = [];
+     }
+     rowsByGroup[group].push(row);
+ });
 
-        const cellCat = tr.insertCell();
-        cellCat.textContent = row.name;
+ // --- NEW: Sort group names (customize order as needed) ---
+ const sortedGroupNames = Object.keys(rowsByGroup).sort((a, b) => {
+     // Example custom sort order: Income -> Bills -> Expenses -> Savings -> Unassigned -> Others
+     const groupOrder = {
+         // Lower numbers appear first
+         'Income': 1, // Assuming 'Income' is a group name you use
+         'Bills': 2,
+         'Expenses': 3,
+         'Savings Goals': 10, // Savings later
+         'Archived': 11, // Archived very last (though filtered out)
+         'Unassigned': 99  // Unassigned last
+     };
+     // Assign a default order number if group isn't in the custom list
+     const orderA = groupOrder[a] !== undefined ? groupOrder[a] : 5; // Default groups around here
+     const orderB = groupOrder[b] !== undefined ? groupOrder[b] : 5;
 
-        const cellPrevAvail = tr.insertCell();
-        cellPrevAvail.textContent = formatCurrency(row.prev_avail);
-        cellPrevAvail.className = `currency ${getCurrencyClass(row.prev_avail)}`;
+     if (orderA !== orderB) {
+         return orderA - orderB; // Sort by custom order first
+     }
+     return a.localeCompare(b); // Alphabetical sort as fallback
+ });
 
-        const cellBudgeted = tr.insertCell();
-        cellBudgeted.textContent = formatCurrency(row.budgeted);
-         // Budgeted usually not colored, unless maybe 0?
-         cellBudgeted.className = `currency ${getCurrencyClass(row.budgeted, true)}`; // Pass true to allow positive color
+ // --- NEW: Iterate through sorted groups and render ---
+ sortedGroupNames.forEach(groupName => {
+     // 1. Insert Group Header Row
+     const headerRow = budgetTbody.insertRow();
+     headerRow.className = 'budget-group-header'; // Class for styling
+     const headerCell = headerRow.insertCell();
+     headerCell.colSpan = 5; // Span across all data columns
+     headerCell.textContent = groupName;
 
-        const cellSpent = tr.insertCell(); // Activity
-        cellSpent.textContent = formatCurrency(row.spent);
-        // Spending is "negative" impact, show red if > 0, green if negative (refunds > expenses)
-        cellSpent.className = `currency ${row.spent > 0 ? 'negative-currency' : (row.spent < 0 ? 'positive-currency' : 'zero-currency')}`;
+     // 2. Sort categories within this group alphabetically by name
+     const groupRows = rowsByGroup[groupName].sort((a, b) => a.name.localeCompare(b.name));
 
+     // 3. Insert Data Rows for this group
+     groupRows.forEach(row => {
+         const tr = budgetTbody.insertRow();
+         if (row.is_savings_goal) {
+             tr.classList.add('savings-goal-row'); // Keep savings goal styling
+         }
 
-        const cellAvailable = tr.insertCell();
-        cellAvailable.textContent = formatCurrency(row.available);
-        cellAvailable.className = `currency ${getCurrencyClass(row.available)}`;
-    });
+         // --- Create cells (same logic as before) ---
+         const cellCat = tr.insertCell();
+         cellCat.textContent = row.name;
 
+         const cellPrevAvail = tr.insertCell();
+         cellPrevAvail.textContent = formatCurrency(row.prev_avail);
+         cellPrevAvail.className = `currency ${getCurrencyClass(row.prev_avail)}`;
+         cellPrevAvail.style.textAlign = 'right'; // Ensure alignment
+
+         const cellBudgeted = tr.insertCell();
+         cellBudgeted.textContent = formatCurrency(row.budgeted);
+         cellBudgeted.className = `currency ${getCurrencyClass(row.budgeted, true)}`;
+         cellBudgeted.style.textAlign = 'right';
+
+         const cellSpent = tr.insertCell(); // Activity
+         cellSpent.textContent = formatCurrency(row.spent);
+         cellSpent.className = `currency ${row.spent > 0 ? 'negative-currency' : (row.spent < 0 ? 'positive-currency' : 'zero-currency')}`;
+         cellSpent.style.textAlign = 'right';
+
+         const cellAvailable = tr.insertCell();
+         cellAvailable.textContent = formatCurrency(row.available);
+         cellAvailable.className = `currency ${getCurrencyClass(row.available)}`;
+         cellAvailable.style.textAlign = 'right';
+     });
+ });
     // Populate totals
     if (totalBudgetedValueTd) {
         totalBudgetedValueTd.textContent = formatCurrency(totals.budgeted);
