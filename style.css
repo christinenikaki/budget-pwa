@@ -591,4 +591,26 @@ footer {
     #transactions-table td:nth-child(2) { /* Cell for Date */
         padding-left: 4px; /* Reduce space next to icon */
     }
+
+    #manage-accounts-section h3 {
+        margin-top: 20px; /* Add space above sub-headings */
+        margin-bottom: 10px;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 5px;
+        font-size: 1.2em;
+    }
+    
+    #manage-accounts-section #add-account-form {
+        background-color: #f8f9fa; /* Slightly different background for form area */
+        padding: 15px;
+        border-radius: 4px;
+        border: 1px solid #e9ecef;
+    }
+    
+    #existing-accounts-list {
+        /* Inherits .summary-list styles, which is good */
+        max-height: 300px; /* Prevent super long lists */
+        overflow-y: auto;
+    }
+    
 }

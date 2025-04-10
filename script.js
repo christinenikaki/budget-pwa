@@ -74,6 +74,17 @@ const modeCompanionRadio = document.getElementById('mode-companion-radio');
 const modeStandaloneRadio = document.getElementById('mode-standalone-radio');
 const settingsStatusDiv = document.getElementById('settings-status');
 
+// --- Manage Accounts Elements ---
+const manageAccountsSection = document.getElementById('manage-accounts-section');
+const manageAccountsContent = document.getElementById('manage-accounts-content'); // Wrapper div
+const manageAccountsInfo = document.getElementById('manage-accounts-info');
+const addAccountForm = document.getElementById('add-account-form');
+const newAccountNameInput = document.getElementById('new-account-name');
+const newAccountTypeSelect = document.getElementById('new-account-type');
+const newAccountBalanceInput = document.getElementById('new-account-balance');
+const addAccountStatusDiv = document.getElementById('add-account-status');
+const existingAccountsList = document.getElementById('existing-accounts-list');
+
 // --- Define Constants ---
 const DB_NAME = 'budgetAppDB';
 const DB_VERSION = 2; // <<<< INCREMENT DB VERSION <<<<
@@ -206,25 +217,26 @@ async function initializeApp() {
     if (currentMode === 'standalone') {
         console.log("Initializing in Standalone Mode...");
         fileLoaderSection?.classList.add('hidden');
-        // Attempt to load data from IndexedDB
-        await loadDataFromDB(); // Implement this function below
-        // Show relevant sections even if no data initially
+        manageAccountsInfo?.classList.add('hidden'); // Hide companion mode message
+        setupStandaloneEventListeners(); 
+        await loadDataFromDB();
         if (dashboardSection) dashboardSection.classList.remove('hidden');
-        // Set initial active link (e.g., Dashboard)
         setActiveNavLink('dashboard-summary');
-
     } else { // Companion Mode
         console.log("Initializing in Companion Mode...");
         fileLoaderSection?.classList.remove('hidden');
-        // Hide other sections until file is loaded
-        mainSections.forEach(section => {
-            if (section.id !== 'file-loader' && section.id !== 'settings-section') { // Keep settings accessible
-                section.classList.add('hidden');
-            }
-        });
+        manageAccountsInfo?.classList.remove('hidden'); // Show companion mode message
+        // Disable form in companion mode (optional but good UX)
+        if(addAccountForm) addAccountForm.style.opacity = '0.5';
+        if(manageAccountsContent) {
+             const inputs = manageAccountsContent.querySelectorAll('input, select, button');
+             inputs.forEach(el => el.disabled = true);
+        }
+        mainSections.forEach(section => { /*...*/ }); // Keep hiding logic
         updateStatus("Companion Mode: Please load your budget file.", "info");
-        await loadPendingTransactionsAndUpdateCount(); // Load count for sync section badge
+        await loadPendingTransactionsAndUpdateCount();
     }
+
 
     // Setup other event listeners etc.
     if (currentYearSpan) currentYearSpan.textContent = new Date().getFullYear();
@@ -234,9 +246,21 @@ async function initializeApp() {
     setupFilterListeners();
     setupAddFormListeners();
     setupSyncButtonListeners();
-    setupSettingsListeners(); // Add listener for mode change radios
+    setupSettingsListeners(); 
 
     console.log("Application initialization complete.");
+}
+
+// NEW: Setup listeners specific to standalone mode
+function setupStandaloneEventListeners() {
+    if (addAccountForm) {
+        addAccountForm.addEventListener('submit', handleAddAccount);
+         // Re-enable form elements if they were disabled by companion mode logic on a previous load
+         addAccountForm.style.opacity = '1';
+         const inputs = addAccountForm.querySelectorAll('input, select, button');
+         inputs.forEach(el => el.disabled = false);
+    }
+    // Add listeners for category management etc. here later
 }
 
 // --- Mode Management ---
@@ -286,22 +310,22 @@ function setupSettingsListeners() {
 function handleModeChange(event) {
     const newMode = event.target.value;
     if (newMode !== 'companion' && newMode !== 'standalone') return; // Invalid value
-
+    
     const previousMode = currentMode;
     if (newMode === previousMode) return; // No change
-
+    
     // Save the new mode
     localStorage.setItem(APP_MODE_KEY, newMode);
     currentMode = newMode; // Update global variable immediately
     console.log(`App Mode changed to: ${currentMode}`);
-
+    
     // Update UI and inform user
     if (settingsStatusDiv) {
         settingsStatusDiv.textContent = `Mode changed to ${currentMode}. Reload the application for the change to take full effect.`;
         settingsStatusDiv.className = 'status-info';
     }
     updateSyncSectionUI(); // Update sync section immediately
-
+    
     // --- CRITICAL: Clear data associated with the *previous* mode ---
     // This prevents mixing data from both modes, which would cause chaos.
     // It's a destructive action, so confirm with the user or be very clear.
@@ -492,6 +516,35 @@ function handleFileSelect(event) {
 }
 
 /**
+ * Displays existing accounts in the Manage Accounts section list.
+ * @param {object} accounts The accounts object { accountName: balance }.
+ */
+function displayExistingAccounts(accounts) {
+    if (!existingAccountsList) return;
+    existingAccountsList.innerHTML = ''; // Clear placeholder/previous list
+
+    const accountNames = Object.keys(accounts || {}).sort();
+
+    if (accountNames.length === 0) {
+        existingAccountsList.innerHTML = '<li>No accounts added yet.</li>';
+        return;
+    }
+
+    accountNames.forEach(name => {
+        const balance = accounts[name];
+        const li = document.createElement('li');
+        // Display Name and Balance (similar to dashboard)
+        const nameSpan = document.createElement('span'); nameSpan.textContent = `${name}: `;
+        const balanceSpan = document.createElement('span');
+        balanceSpan.textContent = formatCurrency(balance);
+        balanceSpan.className = `currency ${getCurrencyClass(balance, true)}`; // Show color
+        li.appendChild(nameSpan);
+        li.appendChild(balanceSpan);
+        existingAccountsList.appendChild(li);
+    });
+}
+
+/**
  * Processes budget data and updates the UI.
  * Behavior depends on the mode.
  * @param {object} data The budget data object (from file or DB).
@@ -544,7 +597,7 @@ async function processBudgetData(data, mode) {
         // --- Populate UI elements (Common logic for both modes) ---
         populateAccountFilter(data.accounts, [filterAccountSelect, txAccountSelect]);
         populateCategoryFilter(data.categories, data.transactions, [filterCategorySelect, txCategorySelect], data.category_groups, mode); // Pass mode and groups
-
+        displayExistingAccounts(data.accounts);
 
         const latestMonth = findLatestMonth(allTransactionsForDisplay); // Use combined/all tx for latest month
         const displayMonth = latestMonth || new Date().toISOString().slice(0, 7); // Fallback to current month if no tx
@@ -1605,6 +1658,137 @@ async function clearAllStandaloneData() {
 }
 
 // --- Add Form Handling ---
+/**
+ * Handles the submission of the Add New Account form (Standalone Mode).
+ * @param {Event} event The form submission event.
+ */
+async function handleAddAccount(event) {
+    event.preventDefault();
+    if (currentMode !== 'standalone') {
+        addAccountStatusDiv.textContent = "Account management only available in Standalone mode.";
+        addAccountStatusDiv.className = 'status-error';
+        return;
+    }
+    if (!addAccountForm || !newAccountNameInput || !newAccountBalanceInput || !addAccountStatusDiv) return;
+
+    const accountName = newAccountNameInput.value.trim();
+    const accountType = newAccountTypeSelect.value; // Get selected type
+    const startingBalance = parseFloat(newAccountBalanceInput.value);
+
+    addAccountStatusDiv.textContent = "Adding account...";
+    addAccountStatusDiv.className = 'status-info';
+
+    // Validation
+    if (!accountName) {
+        addAccountStatusDiv.textContent = "Error: Account name cannot be empty.";
+        addAccountStatusDiv.className = 'status-error';
+        return;
+    }
+    if (isNaN(startingBalance)) {
+        addAccountStatusDiv.textContent = "Error: Invalid starting balance.";
+        addAccountStatusDiv.className = 'status-error';
+        return;
+    }
+
+    // Check for duplicates (using the currently loaded data)
+    if (localBudgetData && localBudgetData.accounts && localBudgetData.accounts.hasOwnProperty(accountName)) {
+        addAccountStatusDiv.textContent = `Error: Account named "${accountName}" already exists.`;
+        addAccountStatusDiv.className = 'status-error';
+        return;
+    }
+
+    const newAccountData = {
+        name: accountName,
+        balance: startingBalance,
+        type: accountType // Store the type
+    };
+
+    try {
+        // Call the DB function to save the account and update RTA
+        await saveAccountAndAdjustRTA(newAccountData);
+
+        addAccountStatusDiv.textContent = `Account "${accountName}" added successfully.`;
+        addAccountStatusDiv.className = 'status-success';
+        addAccountForm.reset(); // Clear the form fields
+
+        // Refresh UI: Reload all data from DB (simplest way for now)
+        await loadDataFromDB();
+
+    } catch (error) {
+        console.error("Failed to add account:", error);
+        addAccountStatusDiv.textContent = `Error adding account: ${error}`;
+        addAccountStatusDiv.className = 'status-error';
+    }
+}
+
+/**
+ * Saves a new account to IndexedDB and adjusts Ready To Assign (Standalone Mode).
+ * @param {object} accountData Object containing { name, balance, type }.
+ * @returns {Promise<void>}
+ */
+function saveAccountAndAdjustRTA(accountData) {
+    return new Promise(async (resolve, reject) => {
+        if (!db) return reject("Database not initialized.");
+
+        const transaction = db.transaction([ACCOUNT_STORE_NAME, METADATA_STORE_NAME], 'readwrite');
+        const accStore = transaction.objectStore(ACCOUNT_STORE_NAME);
+        const metaStore = transaction.objectStore(METADATA_STORE_NAME);
+        let currentRTA = 0;
+
+        // 1. Get current RTA
+        const metaGetReq = metaStore.get('appData');
+        metaGetReq.onerror = (event) => {
+            console.error("Error getting metadata for RTA:", event.target.error);
+            // Don't necessarily fail the whole operation, maybe default RTA to 0?
+            // transaction.abort(); // Or abort if RTA is critical
+            // reject("Failed to read current RTA");
+        };
+        metaGetReq.onsuccess = (event) => {
+            currentRTA = event.target.result?.ready_to_assign || 0.0;
+
+            // 2. Add the new account
+            const accAddReq = accStore.add(accountData);
+            accAddReq.onerror = (event) => {
+                console.error("Error adding account to DB:", event.target.error);
+                transaction.abort(); // Abort on error
+                reject(`Failed to save account: ${event.target.error}`);
+            };
+            accAddReq.onsuccess = () => {
+                console.log(`Account '${accountData.name}' added to DB.`);
+
+                // 3. Calculate and Update RTA
+                // For simplicity: Add the balance directly.
+                // A positive balance increases RTA, a negative (credit card) decreases it.
+                const newRTA = currentRTA + accountData.balance;
+                const updatedMetadata = { key: 'appData', ready_to_assign: newRTA };
+
+                const metaPutReq = metaStore.put(updatedMetadata);
+                metaPutReq.onerror = (event) => {
+                    console.error("Error updating RTA metadata:", event.target.error);
+                    // Account might be saved, but RTA failed. Decide how critical this is.
+                    // transaction.abort(); // Maybe abort?
+                    reject(`Account saved, but failed to update RTA: ${event.target.error}`);
+                };
+                metaPutReq.onsuccess = () => {
+                    console.log(`RTA updated successfully to: ${newRTA}`);
+                    // If we reach here, both operations likely succeeded within the transaction.
+                };
+            };
+        };
+
+        transaction.oncomplete = () => {
+            console.log("Add account & update RTA transaction complete.");
+            resolve(); // Resolve the promise when the transaction completes successfully
+        };
+        transaction.onerror = (event) => {
+            console.error("Add account & update RTA transaction failed:", event.target.error);
+            // Reject was likely already called by specific request errors
+            // but we add a fallback reject here.
+            reject(`Transaction failed: ${event.target.error}`);
+        };
+    });
+}
+
 /** Handles the submission of the new transaction form. Behavior depends on mode. */
 async function handleAddTransaction(event) {
     event.preventDefault();
