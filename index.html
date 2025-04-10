@@ -29,6 +29,7 @@
             <li><a href="#add-expense-form" class="nav-link" data-section="add-expense-form">Add Entry</a></li>
             <li><a href="#transactions-list" class="nav-link" data-section="transactions-list">Transactions</a></li>
             <li><a href="#manage-accounts-section" class="nav-link" data-section="manage-accounts-section">Manage Accounts</a></li> 
+            <li><a href="#manage-categories-section" class="nav-link" data-section="manage-categories-section">Manage Categories</a></li>
             <li><a href="#sync-section" class="nav-link" data-section="sync-section">Sync Data</a></li>
             <li><a href="#settings-section" class="nav-link" data-section="settings-section">Settings</a></li>
         </ul>
@@ -113,6 +114,47 @@
                 </div>
             </div>
         </section>
+
+        <!-- === MANAGE CATEGORIES SECTION (Standalone Mode) === -->
+    <section id="manage-categories-section" class="main-section hidden card">
+        <h2>Manage Categories (Standalone Mode)</h2>
+
+        <div id="manage-categories-content"> <!-- Wrapper div -->
+            <p>Add new categories and assign them to groups.</p>
+
+            <form id="add-category-form" style="margin-bottom: 30px;">
+                <h3>Add New Category</h3>
+                <div class="filter-grid"> <!-- Reuse grid for layout -->
+                    <div class="form-group">
+                        <label for="new-category-name">Category Name:</label>
+                        <input type="text" id="new-category-name" placeholder="e.g., Groceries, Rent" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="new-category-group">Category Group:</label>
+                        <select id="new-category-group" required>
+                            <option value="">-- Select Group --</option>
+                            <!-- Options populated by JS -->
+                            <!-- Consider adding a "Create New Group..." option later -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <button type="submit" class="button">Add Category</button>
+                    </div>
+                </div>
+                <div id="add-category-status" style="margin-top: 10px;"></div>
+            </form>
+
+            <hr style="margin: 20px 0;">
+
+            <h3>Existing Categories by Group</h3>
+            <div id="existing-categories-list">
+                <p>No categories added yet.</p> <!-- Placeholder -->
+            </div>
+             <div id="manage-categories-info" style="font-size: 0.9em; color: #666; margin-top: 15px;">
+                 This feature is primarily for Standalone mode. Category groups help organize your budget.
+             </div>
+        </div>
+    </section>
 
         <section id="dashboard-summary" class="main-section hidden">
             <h2>Dashboard <span id="summary-month-display" style="font-size: 0.8em; color: #666;"></span></h2>

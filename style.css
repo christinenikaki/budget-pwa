@@ -612,5 +612,49 @@ footer {
         max-height: 300px; /* Prevent super long lists */
         overflow-y: auto;
     }
+
+    #manage-categories-section h3 { /* Style for "Add New Category" and "Existing..." */
+        margin-top: 20px;
+        margin-bottom: 10px;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 5px;
+        font-size: 1.2em;
+    }
+    
+    #manage-categories-section #add-category-form {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 4px;
+        border: 1px solid #e9ecef;
+    }
+    
+    /* Styling for the grouped category list */
+    .category-group-block {
+        margin-bottom: 15px;
+        padding: 10px;
+        background-color: #f9f9f9;
+        border: 1px solid #eee;
+        border-radius: 3px;
+    }
+    
+    .category-group-block h4 { /* Group Name Heading */
+        margin-top: 0;
+        margin-bottom: 8px;
+        font-size: 1.05em;
+        color: #555;
+        border-bottom: 1px dashed #ddd;
+        padding-bottom: 4px;
+    }
+    
+    .category-group-block ul {
+        list-style: none;
+        padding-left: 10px; /* Indent category names slightly */
+        margin: 0;
+    }
+    
+    .category-group-block li {
+        padding: 3px 0;
+        font-size: 0.95em;
+    }
     
 }

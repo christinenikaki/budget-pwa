@@ -85,6 +85,16 @@ const newAccountBalanceInput = document.getElementById('new-account-balance');
 const addAccountStatusDiv = document.getElementById('add-account-status');
 const existingAccountsList = document.getElementById('existing-accounts-list');
 
+// --- Manage Categories Elements ---
+const manageCategoriesSection = document.getElementById('manage-categories-section');
+const manageCategoriesContent = document.getElementById('manage-categories-content');
+const manageCategoriesInfo = document.getElementById('manage-categories-info');
+const addCategoryForm = document.getElementById('add-category-form');
+const newCategoryNameInput = document.getElementById('new-category-name');
+const newCategoryGroupSelect = document.getElementById('new-category-group');
+const addCategoryStatusDiv = document.getElementById('add-category-status');
+const existingCategoriesListDiv = document.getElementById('existing-categories-list'); // The div containing the list
+
 // --- Define Constants ---
 const DB_NAME = 'budgetAppDB';
 const DB_VERSION = 2; // <<<< INCREMENT DB VERSION <<<<
@@ -218,6 +228,7 @@ async function initializeApp() {
         console.log("Initializing in Standalone Mode...");
         fileLoaderSection?.classList.add('hidden');
         manageAccountsInfo?.classList.add('hidden'); // Hide companion mode message
+        manageCategoriesInfo?.classList.add('hidden'); // Hide companion message
         setupStandaloneEventListeners(); 
         await loadDataFromDB();
         if (dashboardSection) dashboardSection.classList.remove('hidden');
@@ -226,11 +237,17 @@ async function initializeApp() {
         console.log("Initializing in Companion Mode...");
         fileLoaderSection?.classList.remove('hidden');
         manageAccountsInfo?.classList.remove('hidden'); // Show companion mode message
-        // Disable form in companion mode (optional but good UX)
+        manageCategoriesInfo?.classList.remove('hidden'); // Show companion message
+        // Disable forms in companion mode
         if(addAccountForm) addAccountForm.style.opacity = '0.5';
         if(manageAccountsContent) {
              const inputs = manageAccountsContent.querySelectorAll('input, select, button');
              inputs.forEach(el => el.disabled = true);
+        }
+        if(addCategoryForm) { // Disable category form
+            addCategoryForm.style.opacity = '0.5';
+            const inputs = addCategoryForm.querySelectorAll('input, select, button');
+            inputs.forEach(el => el.disabled = true);
         }
         mainSections.forEach(section => { /*...*/ }); // Keep hiding logic
         updateStatus("Companion Mode: Please load your budget file.", "info");
@@ -251,7 +268,7 @@ async function initializeApp() {
     console.log("Application initialization complete.");
 }
 
-// NEW: Setup listeners specific to standalone mode
+// Setup listeners specific to standalone mode
 function setupStandaloneEventListeners() {
     if (addAccountForm) {
         addAccountForm.addEventListener('submit', handleAddAccount);
@@ -260,7 +277,12 @@ function setupStandaloneEventListeners() {
          const inputs = addAccountForm.querySelectorAll('input, select, button');
          inputs.forEach(el => el.disabled = false);
     }
-    // Add listeners for category management etc. here later
+    if (addCategoryForm) { // Add listener for category form
+        addCategoryForm.addEventListener('submit', handleAddCategory);
+         // Re-enable category form if needed
+        addCategoryForm.style.opacity = '1';
+        addCategoryForm.querySelectorAll('input, select, button').forEach(el => el.disabled = false);
+    }
 }
 
 // --- Mode Management ---
@@ -515,6 +537,7 @@ function handleFileSelect(event) {
     reader.readAsText(file);
 }
 
+
 /**
  * Displays existing accounts in the Manage Accounts section list.
  * @param {object} accounts The accounts object { accountName: balance }.
@@ -541,6 +564,103 @@ function displayExistingAccounts(accounts) {
         li.appendChild(nameSpan);
         li.appendChild(balanceSpan);
         existingAccountsList.appendChild(li);
+    });
+}
+
+/**
+ * Populates the 'Category Group' dropdown in the Add Category form.
+ * @param {object} groupsData The category groups object { categoryName: groupName }.
+ * @param {Array<string>} categories List of all categories.
+ */
+function populateCategoryGroupDropdown(groupsData = {}, categories = []) {
+    if (!newCategoryGroupSelect) return;
+    newCategoryGroupSelect.innerHTML = ''; // Clear existing options
+
+    const uniqueGroups = new Set();
+    // Add groups associated with existing categories
+    categories.forEach(cat => {
+        if (groupsData[cat]) {
+            uniqueGroups.add(groupsData[cat]);
+        }
+    });
+     // Add common default groups if they aren't already present
+     ['Income', 'Expenses', 'Bills', 'Savings Goals', 'Archived'].forEach(g => uniqueGroups.add(g));
+     // Special internal/unwanted groups (remove if accidentally added)
+     uniqueGroups.delete(UNKNOWN_INCOME_SOURCE);
+     uniqueGroups.delete(null); // Remove null/undefined if present
+     uniqueGroups.delete(undefined);
+
+
+    const sortedGroups = Array.from(uniqueGroups).sort();
+
+    // Add the default "Select Group" option
+    newCategoryGroupSelect.add(new Option('-- Select Group --', ''));
+
+    // Add each unique group
+    sortedGroups.forEach(groupName => {
+        if (groupName) { // Ensure group name is not empty
+            newCategoryGroupSelect.add(new Option(groupName, groupName));
+        }
+    });
+
+    // Optionally add "Create New..." later
+    // newCategoryGroupSelect.add(new Option('Create New Group...', 'CREATE_NEW'));
+}
+
+/**
+ * Displays existing categories, grouped visually, in the Manage Categories section.
+ * @param {Array<string>} categories List of category names.
+ * @param {object} groupsData The category groups object { categoryName: groupName }.
+ */
+function displayExistingCategories(categories = [], groupsData = {}) {
+    if (!existingCategoriesListDiv) return;
+    existingCategoriesListDiv.innerHTML = ''; // Clear placeholder/previous list
+
+    if (!categories || categories.length === 0) {
+        existingCategoriesListDiv.innerHTML = '<p>No categories added yet.</p>';
+        return;
+    }
+
+    // Group categories by their group name
+    const categoriesByGroup = {};
+    categories.forEach(cat => {
+        const group = groupsData[cat] || 'Unassigned'; // Default to 'Unassigned' if no group
+        if (!categoriesByGroup[group]) {
+            categoriesByGroup[group] = [];
+        }
+        categoriesByGroup[group].push(cat);
+    });
+
+    // Sort group names (with 'Unassigned' maybe last?)
+    const sortedGroupNames = Object.keys(categoriesByGroup).sort((a, b) => {
+        if (a === 'Unassigned') return 1; // Push Unassigned to the end
+        if (b === 'Unassigned') return -1;
+        // Sort standard groups like Savings Goals/Archived last? (optional)
+        const order = { "Savings Goals": 1, "Archived": 2 };
+        const orderA = order[a] || 0;
+        const orderB = order[b] || 0;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.localeCompare(b); // Alphabetical otherwise
+    });
+
+    // Create HTML for each group
+    sortedGroupNames.forEach(groupName => {
+        const groupDiv = document.createElement('div');
+        groupDiv.className = 'category-group-block';
+
+        const groupHeading = document.createElement('h4');
+        groupHeading.textContent = groupName;
+        groupDiv.appendChild(groupHeading);
+
+        const categoryList = document.createElement('ul');
+        categoriesByGroup[groupName].sort().forEach(catName => { // Sort categories within group
+            const listItem = document.createElement('li');
+            listItem.textContent = catName;
+            categoryList.appendChild(listItem);
+        });
+        groupDiv.appendChild(categoryList);
+
+        existingCategoriesListDiv.appendChild(groupDiv);
     });
 }
 
@@ -598,6 +718,16 @@ async function processBudgetData(data, mode) {
         populateAccountFilter(data.accounts, [filterAccountSelect, txAccountSelect]);
         populateCategoryFilter(data.categories, data.transactions, [filterCategorySelect, txCategorySelect], data.category_groups, mode); // Pass mode and groups
         displayExistingAccounts(data.accounts);
+
+        // --- Populate Category Management UI ---
+        if (mode === 'standalone') {
+            populateCategoryGroupDropdown(data.category_groups, data.categories);
+            displayExistingCategories(data.categories, data.category_groups);
+        } else {
+             // Optionally clear/disable category management UI if switching from standalone
+              if (existingCategoriesListDiv) existingCategoriesListDiv.innerHTML = '<p>Category management is for Standalone Mode.</p>';
+              if (newCategoryGroupSelect) newCategoryGroupSelect.innerHTML = '<option value="">N/A</option>';
+        }
 
         const latestMonth = findLatestMonth(allTransactionsForDisplay); // Use combined/all tx for latest month
         const displayMonth = latestMonth || new Date().toISOString().slice(0, 7); // Fallback to current month if no tx
@@ -1784,6 +1914,119 @@ function saveAccountAndAdjustRTA(accountData) {
             console.error("Add account & update RTA transaction failed:", event.target.error);
             // Reject was likely already called by specific request errors
             // but we add a fallback reject here.
+            reject(`Transaction failed: ${event.target.error}`);
+        };
+    });
+}
+
+/**
+ * Handles the submission of the Add New Category form (Standalone Mode).
+ * @param {Event} event The form submission event.
+ */
+async function handleAddCategory(event) {
+    event.preventDefault();
+    if (currentMode !== 'standalone') {
+        addCategoryStatusDiv.textContent = "Category management only available in Standalone mode.";
+        addCategoryStatusDiv.className = 'status-error';
+        return;
+    }
+     if (!addCategoryForm || !newCategoryNameInput || !newCategoryGroupSelect || !addCategoryStatusDiv) return;
+
+    const categoryName = newCategoryNameInput.value.trim();
+    const selectedGroup = newCategoryGroupSelect.value;
+
+    addCategoryStatusDiv.textContent = "Adding category...";
+    addCategoryStatusDiv.className = 'status-info';
+
+    // Validation
+    if (!categoryName) {
+        addCategoryStatusDiv.textContent = "Error: Category name cannot be empty.";
+        addCategoryStatusDiv.className = 'status-error';
+        return;
+    }
+    if (!selectedGroup) {
+        addCategoryStatusDiv.textContent = "Error: Please select a category group.";
+        addCategoryStatusDiv.className = 'status-error';
+        return;
+    }
+     // Handle "Create New Group" later if implemented
+     // if (selectedGroup === 'CREATE_NEW') { /* ... */ }
+
+    // Check for duplicates (using currently loaded data)
+     if (localBudgetData && localBudgetData.categories && localBudgetData.categories.includes(categoryName)) {
+        addCategoryStatusDiv.textContent = `Error: Category named "${categoryName}" already exists.`;
+        addCategoryStatusDiv.className = 'status-error';
+        return;
+    }
+
+    const newCategoryData = {
+        name: categoryName,
+        group: selectedGroup
+    };
+
+    try {
+        // Call the DB function to save the category and its group assignment
+        await saveCategoryAndGroup(newCategoryData);
+
+        addCategoryStatusDiv.textContent = `Category "${categoryName}" added successfully to group "${selectedGroup}".`;
+        addCategoryStatusDiv.className = 'status-success';
+        addCategoryForm.reset(); // Clear the form
+
+        // Refresh UI: Reload all data from DB (simplest for now)
+        await loadDataFromDB();
+
+    } catch (error) {
+        console.error("Failed to add category:", error);
+        addCategoryStatusDiv.textContent = `Error adding category: ${error}`;
+        addCategoryStatusDiv.className = 'status-error';
+    }
+}
+
+/**
+ * Saves a new category name and its group assignment to IndexedDB (Standalone Mode).
+ * @param {object} categoryData Object containing { name, group }.
+ * @returns {Promise<void>}
+ */
+function saveCategoryAndGroup(categoryData) {
+    return new Promise(async (resolve, reject) => {
+        if (!db) return reject("Database not initialized.");
+
+        const transaction = db.transaction([CATEGORY_STORE_NAME, GROUP_STORE_NAME], 'readwrite');
+        const catStore = transaction.objectStore(CATEGORY_STORE_NAME);
+        const grpStore = transaction.objectStore(GROUP_STORE_NAME);
+
+        // 1. Add the category name
+        // The object store expects { name: '...' } because keyPath is 'name'
+        const catAddReq = catStore.add({ name: categoryData.name });
+        catAddReq.onerror = (event) => {
+            console.error("Error adding category name to DB:", event.target.error);
+            transaction.abort();
+            reject(`Failed to save category name: ${event.target.error}`);
+        };
+        catAddReq.onsuccess = () => {
+            console.log(`Category '${categoryData.name}' added to Category store.`);
+
+            // 2. Add the group assignment
+            // The object store expects { categoryName: '...', groupName: '...' } because keyPath is 'categoryName'
+            const groupMapping = { categoryName: categoryData.name, groupName: categoryData.group };
+            const grpAddReq = grpStore.add(groupMapping);
+            grpAddReq.onerror = (event) => {
+                console.error("Error adding category group mapping to DB:", event.target.error);
+                // Category name might be saved, but group failed. Abort to keep consistent?
+                transaction.abort();
+                reject(`Category name saved, but failed to save group assignment: ${event.target.error}`);
+            };
+            grpAddReq.onsuccess = () => {
+                console.log(`Group mapping for '${categoryData.name}' to '${categoryData.group}' added.`);
+            };
+        };
+
+        transaction.oncomplete = () => {
+            console.log("Add category & group transaction complete.");
+            resolve();
+        };
+        transaction.onerror = (event) => {
+            console.error("Add category & group transaction failed:", event.target.error);
             reject(`Transaction failed: ${event.target.error}`);
         };
     });
