@@ -128,6 +128,7 @@ let currentBudgetMonth = null; // Stores "YYYY-MM" for the budget view
 let currentChartMonth = null;  // Stores "YYYY-MM" for the chart view
 let earliestDataMonth = null; // Stores "YYYY-MM" of the first transaction
 let latestDataMonth = null;   // Stores "YYYY-MM" of the last transaction (or current month)
+let activeBudgetInput = null;
 
 /**
  * Initializes the IndexedDB database.
@@ -268,10 +269,25 @@ async function initializeApp() {
     setupSyncButtonListeners();
     setupSettingsListeners(); 
     setupNavButtonListeners();
+    setupBudgetEditingListener();
 
     console.log("Application initialization complete.");
 }
 
+// --- Setup Budget Editing Listener ---
+function setupBudgetEditingListener() {
+    if (currentMode !== 'standalone') {
+        console.log("Budget editing disabled in Companion mode.");
+        return; // Only enable in Standalone mode
+    }
+
+    if (budgetTbody) {
+        budgetTbody.addEventListener('click', handleBudgetCellClick);
+        console.log("Budget editing listener attached.");
+    } else {
+        console.warn("Could not attach budget editing listener: budgetTbody not found.");
+    }
+}
 // Setup listeners specific to standalone mode
 function setupStandaloneEventListeners() {
     if (addAccountForm) {
@@ -873,6 +889,221 @@ function updateCategoryGroup(categoryName, newGroupName) {
 }
 
 /**
+ * Handles clicks within the budget table body for inline editing.
+ * @param {Event} event The click event object.
+ */
+function handleBudgetCellClick(event) {
+    const targetCell = event.target.closest('td.editable-budget'); // Find the editable TD
+
+    // If clicked outside an editable cell or if already editing elsewhere, do nothing
+    if (!targetCell || activeBudgetInput) {
+        return;
+    }
+
+    const targetRow = targetCell.closest('tr[data-category]');
+    if (!targetRow) return; // Should not happen if cell is found
+
+    const categoryName = targetRow.dataset.category;
+    const currentPeriod = currentBudgetMonth; // Use the globally tracked month
+
+    if (!categoryName || !currentPeriod) {
+        console.error("Missing category name or period for editing.");
+        return;
+    }
+
+    const originalValueStr = targetCell.textContent;
+    const originalValue = parseCurrency(originalValueStr); // Parse the displayed value
+
+    // --- Create and configure the input field ---
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.step = '0.01';
+    input.value = originalValue.toFixed(2); // Set value with 2 decimal places
+    input.dataset.originalValueStr = originalValueStr; // Store original formatted string
+    input.dataset.categoryName = categoryName; // Store category for easy access
+    input.dataset.period = currentPeriod;       // Store period
+
+    // --- Clear the cell and add the input ---
+    targetCell.innerHTML = '';
+    targetCell.appendChild(input);
+    input.focus();
+    input.select(); // Select the text
+
+    activeBudgetInput = input; // Mark this input as active
+
+    // --- Add listeners to the input for saving/canceling ---
+    input.addEventListener('blur', handleBudgetInputBlur);
+    input.addEventListener('keydown', handleBudgetInputKeydown);
+}
+
+/** Handles losing focus on the budget input field (saves). */
+function handleBudgetInputBlur(event) {
+    saveBudgetValue(event.target);
+}
+
+/** Handles key presses within the budget input field (Enter/Escape). */
+function handleBudgetInputKeydown(event) {
+    if (event.key === 'Enter') {
+        event.preventDefault(); // Prevent form submission if inside one
+        saveBudgetValue(event.target);
+    } else if (event.key === 'Escape') {
+        cancelBudgetValue(event.target);
+    }
+}
+
+/**
+ * Saves the new budget value from the input field.
+ * @param {HTMLInputElement} input The input element being edited.
+ */
+async function saveBudgetValue(input) {
+    if (!input || input !== activeBudgetInput) return; // Ensure it's the active input
+
+    const newValueStr = input.value;
+    const categoryName = input.dataset.categoryName;
+    const period = input.dataset.period;
+    const originalValueStr = input.dataset.originalValueStr; // Retrieve original formatted value
+
+    activeBudgetInput = null; // Deactivate editing state
+
+    let newValue = parseFloat(newValueStr);
+
+    // Basic validation
+    if (isNaN(newValue) || newValue < 0) {
+        console.warn("Invalid budget amount entered:", newValueStr);
+        // Revert to original value on invalid input
+        input.parentElement.textContent = originalValueStr; // Restore original text
+        return;
+    }
+    newValue = parseFloat(newValue.toFixed(2)); // Ensure 2 decimal places
+
+    const formattedNewValue = formatCurrency(newValue);
+
+    // --- Optimistic UI Update (show new value immediately) ---
+    input.parentElement.textContent = formattedNewValue;
+    // Update totals visually (might be slightly off until data reloads, but good feedback)
+    updateBudgetTableTotals();
+
+
+    // --- Save to Database (async) ---
+    try {
+        console.log(`Saving budget: Period=${period}, Category=${categoryName}, Amount=${newValue}`);
+        await updateBudgetAmountInDB(period, categoryName, newValue);
+
+        // --- Update RTA display and potentially other data ---
+        // Best practice: Reload data from DB after save to ensure full consistency
+        console.log("Budget amount saved. Reloading data from DB for consistency...");
+        await loadDataFromDB(); // This will re-render table, update RTA, etc.
+
+    } catch (error) {
+        console.error("Failed to save budget amount:", error);
+        // Revert UI change on failure
+        input.parentElement.textContent = originalValueStr; // Restore original
+        updateBudgetTableTotals(); // Recalculate totals based on reverted value
+        updateStatus(`Error saving budget: ${error}`, "error"); // Show error to user
+    } finally {
+        // Cleanup: Ensure input is removed even if save failed but wasn't caught
+        if (input.parentElement && input.parentElement.contains(input)) {
+            input.remove();
+        }
+    }
+}
+
+/**
+ * Cancels the budget edit and restores the original value.
+ * @param {HTMLInputElement} input The input element being edited.
+ */
+function cancelBudgetValue(input) {
+    if (!input || input !== activeBudgetInput) return; // Ensure it's the active input
+
+    const originalValueStr = input.dataset.originalValueStr;
+    activeBudgetInput = null; // Deactivate editing state
+
+    // Restore original value and remove input
+    input.parentElement.textContent = originalValueStr;
+    console.log("Budget edit cancelled.");
+}
+
+/**
+ * Updates a specific category's budgeted amount for a given period in IndexedDB,
+ * and adjusts Ready To Assign accordingly. (Standalone Mode)
+ * @param {string} period The budget period (YYYY-MM).
+ * @param {string} categoryName The name of the category.
+ * @param {number} newAmount The new budgeted amount.
+ * @returns {Promise<void>}
+ */
+function updateBudgetAmountInDB(period, categoryName, newAmount) {
+    return new Promise(async (resolve, reject) => {
+        if (!db) return reject("Database not initialized.");
+        if (currentMode !== 'standalone') return reject("Budget editing only allowed in Standalone mode.");
+
+        const transaction = db.transaction([BUDGET_PERIOD_STORE_NAME, METADATA_STORE_NAME], 'readwrite');
+        const bpStore = transaction.objectStore(BUDGET_PERIOD_STORE_NAME);
+        const metaStore = transaction.objectStore(METADATA_STORE_NAME);
+
+        let currentRTA = 0.0;
+        let originalBudgetAmount = 0.0;
+
+        // --- Get current RTA ---
+        const metaGetReq = metaStore.get('appData');
+        metaGetReq.onerror = (event) => reject(`Failed to read metadata: ${event.target.error}`);
+        metaGetReq.onsuccess = (event) => {
+            currentRTA = event.target.result?.ready_to_assign || 0.0;
+
+            // --- Get current budget period data ---
+            const bpGetReq = bpStore.get(period);
+            bpGetReq.onerror = (event) => reject(`Failed to read budget period ${period}: ${event.target.error}`);
+            bpGetReq.onsuccess = (event) => {
+                let budgetPeriodData = event.target.result;
+
+                // If period doesn't exist, create it
+                if (!budgetPeriodData) {
+                    budgetPeriodData = { period: period, budget: {} };
+                    originalBudgetAmount = 0.0; // No previous budget
+                } else {
+                    originalBudgetAmount = budgetPeriodData.budget?.[categoryName] || 0.0;
+                }
+
+                // --- Update the budget amount for the category ---
+                if (!budgetPeriodData.budget) {
+                    budgetPeriodData.budget = {};
+                }
+                budgetPeriodData.budget[categoryName] = newAmount;
+
+                // --- Save the updated budget period data ---
+                const bpPutReq = bpStore.put(budgetPeriodData);
+                bpPutReq.onerror = (event) => reject(`Failed to save budget period ${period}: ${event.target.error}`);
+                bpPutReq.onsuccess = () => {
+                    console.log(`Budget updated for ${categoryName} in ${period} to ${newAmount}`);
+
+                    // --- Calculate change and update RTA ---
+                    const delta = newAmount - originalBudgetAmount; // How much the budget *changed*
+                    const newRTA = currentRTA - delta; // Budgeting more decreases RTA, budgeting less increases RTA
+
+                    // --- Save updated RTA ---
+                    const updatedMetadata = { key: 'appData', ready_to_assign: newRTA };
+                    const metaPutReq = metaStore.put(updatedMetadata);
+                    metaPutReq.onerror = (event) => reject(`Budget saved, but failed to update RTA: ${event.target.error}`);
+                    metaPutReq.onsuccess = () => {
+                        console.log(`RTA updated successfully to: ${newRTA} (change: ${-delta})`);
+                        // Both updates seem successful within the transaction
+                    };
+                };
+            };
+        };
+
+        transaction.oncomplete = () => {
+            console.log("Update budget amount transaction complete.");
+            resolve();
+        };
+        transaction.onerror = (event) => {
+            console.error("Update budget amount transaction failed:", event.target.error);
+            // Reject was likely called earlier by specific request errors
+            reject(`Transaction failed: ${event.target.error}`);
+        };
+    });
+}
+
+/**
  * Processes budget data and updates the UI.
  * Behavior depends on the mode.
  * @param {object} data The budget data object (from file or DB).
@@ -1303,6 +1534,7 @@ function calculateBudgetViewData(period, categories = [], budgetPeriodsData = {}
 
 /**
  * Renders the calculated budget data into the HTML table.
+ * ADDS data-category to rows and editable-budget class to budgeted cells.
  * @param {Array<object>} budgetRows Array of row data objects.
  * @param {{budgeted: number, spent: number, available: number}} totals Calculated totals.
  * @param {string} period The period being displayed (YYYY-MM).
@@ -1322,90 +1554,69 @@ function renderBudgetTable(budgetRows, totals, period, titleSuffix = "") {
     if (!budgetTbody || !budgetRows || budgetRows.length === 0) {
          if (budgetNoDataMsg) budgetNoDataMsg.classList.remove('hidden');
         console.warn("No budget rows to render for period:", period);
-        // Clear totals explicitly if no rows
         if (totalBudgetedValueTd) totalBudgetedValueTd.textContent = formatCurrency(0);
         if (totalSpentValueTd) totalSpentValueTd.textContent = formatCurrency(0);
         if (totalAvailableValueTd) totalAvailableValueTd.textContent = formatCurrency(0);
-        return;        return;
+        return;
     }
 
- // --- NEW: Group rows by category group ---
- const rowsByGroup = {};
- budgetRows.forEach(row => {
-     // Use the group property added in calculateBudgetViewData
-     const group = row.group || 'Unassigned';
-     if (!rowsByGroup[group]) {
-         rowsByGroup[group] = [];
-     }
-     rowsByGroup[group].push(row);
- });
+    const rowsByGroup = {};
+    budgetRows.forEach(row => {
+        const group = row.group || 'Unassigned';
+        if (!rowsByGroup[group]) rowsByGroup[group] = [];
+        rowsByGroup[group].push(row);
+    });
 
- // --- NEW: Sort group names (customize order as needed) ---
- const sortedGroupNames = Object.keys(rowsByGroup).sort((a, b) => {
-     // Example custom sort order: Income -> Bills -> Expenses -> Savings -> Unassigned -> Others
-     const groupOrder = {
-         // Lower numbers appear first
-         'Income': 1, // Assuming 'Income' is a group name you use
-         'Bills': 2,
-         'Expenses': 3,
-         'Savings Goals': 10, // Savings later
-         'Archived': 11, // Archived very last (though filtered out)
-         'Unassigned': 99  // Unassigned last
-     };
-     // Assign a default order number if group isn't in the custom list
-     const orderA = groupOrder[a] !== undefined ? groupOrder[a] : 5; // Default groups around here
-     const orderB = groupOrder[b] !== undefined ? groupOrder[b] : 5;
+    const sortedGroupNames = Object.keys(rowsByGroup).sort((a, b) => {
+        const groupOrder = {'Income': 1,'Bills': 2,'Expenses': 3,'Savings Goals': 10,'Archived': 11,'Unassigned': 99 };
+        const orderA = groupOrder[a] !== undefined ? groupOrder[a] : 5;
+        const orderB = groupOrder[b] !== undefined ? groupOrder[b] : 5;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.localeCompare(b);
+    });
 
-     if (orderA !== orderB) {
-         return orderA - orderB; // Sort by custom order first
-     }
-     return a.localeCompare(b); // Alphabetical sort as fallback
- });
+    sortedGroupNames.forEach(groupName => {
+        const headerRow = budgetTbody.insertRow();
+        headerRow.className = 'budget-group-header';
+        const headerCell = headerRow.insertCell();
+        headerCell.colSpan = 5;
+        headerCell.textContent = groupName;
 
- // --- NEW: Iterate through sorted groups and render ---
- sortedGroupNames.forEach(groupName => {
-     // 1. Insert Group Header Row
-     const headerRow = budgetTbody.insertRow();
-     headerRow.className = 'budget-group-header'; // Class for styling
-     const headerCell = headerRow.insertCell();
-     headerCell.colSpan = 5; // Span across all data columns
-     headerCell.textContent = groupName;
+        const groupRows = rowsByGroup[groupName].sort((a, b) => a.name.localeCompare(b.name));
 
-     // 2. Sort categories within this group alphabetically by name
-     const groupRows = rowsByGroup[groupName].sort((a, b) => a.name.localeCompare(b.name));
+        groupRows.forEach(row => {
+            const tr = budgetTbody.insertRow();
+            tr.dataset.category = row.name; // <<< --- ADD data-category attribute
 
-     // 3. Insert Data Rows for this group
-     groupRows.forEach(row => {
-         const tr = budgetTbody.insertRow();
-         if (row.is_savings_goal) {
-             tr.classList.add('savings-goal-row'); // Keep savings goal styling
-         }
+            if (row.is_savings_goal) tr.classList.add('savings-goal-row');
 
-         // --- Create cells (same logic as before) ---
-         const cellCat = tr.insertCell();
-         cellCat.textContent = row.name;
+            const cellCat = tr.insertCell(); cellCat.textContent = row.name;
 
-         const cellPrevAvail = tr.insertCell();
-         cellPrevAvail.textContent = formatCurrency(row.prev_avail);
-         cellPrevAvail.className = `currency ${getCurrencyClass(row.prev_avail)}`;
-         cellPrevAvail.style.textAlign = 'right'; // Ensure alignment
+            const cellPrevAvail = tr.insertCell();
+            cellPrevAvail.textContent = formatCurrency(row.prev_avail);
+            cellPrevAvail.className = `currency ${getCurrencyClass(row.prev_avail)}`;
+            cellPrevAvail.style.textAlign = 'right';
 
-         const cellBudgeted = tr.insertCell();
-         cellBudgeted.textContent = formatCurrency(row.budgeted);
-         cellBudgeted.className = `currency ${getCurrencyClass(row.budgeted, true)}`;
-         cellBudgeted.style.textAlign = 'right';
+            const cellBudgeted = tr.insertCell();
+            cellBudgeted.textContent = formatCurrency(row.budgeted);
+            cellBudgeted.className = `currency ${getCurrencyClass(row.budgeted, true)}`;
+            cellBudgeted.style.textAlign = 'right';
+            if (currentMode === 'standalone') { // <<< --- Only add class in standalone mode
+                cellBudgeted.classList.add('editable-budget');
+                cellBudgeted.title = "Click to edit budget"; // Add tooltip
+            }
 
-         const cellSpent = tr.insertCell(); // Activity
-         cellSpent.textContent = formatCurrency(row.spent);
-         cellSpent.className = `currency ${row.spent > 0 ? 'negative-currency' : (row.spent < 0 ? 'positive-currency' : 'zero-currency')}`;
-         cellSpent.style.textAlign = 'right';
+            const cellSpent = tr.insertCell();
+            cellSpent.textContent = formatCurrency(row.spent);
+            cellSpent.className = `currency ${row.spent > 0 ? 'negative-currency' : (row.spent < 0 ? 'positive-currency' : 'zero-currency')}`;
+            cellSpent.style.textAlign = 'right';
 
-         const cellAvailable = tr.insertCell();
-         cellAvailable.textContent = formatCurrency(row.available);
-         cellAvailable.className = `currency ${getCurrencyClass(row.available)}`;
-         cellAvailable.style.textAlign = 'right';
-     });
- });
+            const cellAvailable = tr.insertCell();
+            cellAvailable.textContent = formatCurrency(row.available);
+            cellAvailable.className = `currency ${getCurrencyClass(row.available)}`;
+            cellAvailable.style.textAlign = 'right';
+        });
+    });
     // Populate totals
     if (totalBudgetedValueTd) {
         totalBudgetedValueTd.textContent = formatCurrency(totals.budgeted);
@@ -1419,7 +1630,73 @@ function renderBudgetTable(budgetRows, totals, period, titleSuffix = "") {
         totalAvailableValueTd.textContent = formatCurrency(totals.available);
         totalAvailableValueTd.className = `currency ${getCurrencyClass(totals.available)}`;
     }
+    // Re-calculate and display totals AFTER rows are rendered
+    updateBudgetTableTotals();
 }
+
+// --- Helper Function: Update Budget Table Totals ---
+/** Recalculates and updates the footer totals based on current table data. */
+function updateBudgetTableTotals() {
+    if (!budgetTbody || !totalBudgetedValueTd || !totalSpentValueTd || !totalAvailableValueTd) {
+        console.warn("Cannot update totals: Missing elements.");
+        return;
+    }
+
+    let totalBudgeted = 0.0;
+    let totalSpent = 0.0;
+    let totalAvailable = 0.0;
+
+    const rows = budgetTbody.querySelectorAll('tr[data-category]'); // Select only data rows
+
+    rows.forEach(row => {
+        // Find the cells within this row (use indices - adjust if columns change)
+        const budgetedCell = row.cells[2]; // Assuming 3rd cell (index 2) is Budgeted
+        const spentCell = row.cells[3];    // Assuming 4th cell (index 3) is Activity/Spent
+        const availableCell = row.cells[4]; // Assuming 5th cell (index 4) is Available
+
+        // Extract and parse values safely
+        totalBudgeted += parseCurrency(budgetedCell?.textContent || '0');
+        totalSpent += parseCurrency(spentCell?.textContent || '0');
+        // Available total is trickier - it depends on previous month's carryover too.
+        // For simplicity here, we recalculate it based on the displayed budgeted/spent for this month.
+        // A full recalculation (`calculateBudgetViewData`) might be needed for perfect accuracy including carryover.
+        // Let's sum the displayed available values for now.
+        totalAvailable += parseCurrency(availableCell?.textContent || '0');
+    });
+
+     // Update the footer cells
+    totalBudgetedValueTd.textContent = formatCurrency(totalBudgeted);
+    totalBudgetedValueTd.className = `currency ${getCurrencyClass(totalBudgeted, true)}`;
+
+    totalSpentValueTd.textContent = formatCurrency(totalSpent);
+    totalSpentValueTd.className = `currency ${totalSpent > 0 ? 'negative-currency' : (totalSpent < 0 ? 'positive-currency' : 'zero-currency')}`;
+
+    // Recalculate total available based on sums (more robust than summing individual available cells)
+    // This relies on having the 'prev_available' conceptually available, which isn't stored directly in the DOM easily.
+    // For now, summing the displayed 'available' might be sufficient for visual update,
+    // but a full data reload (`loadDataFromDB`) after saving is the most reliable way.
+    // Let's stick to summing the displayed available column for immediate visual feedback after edit.
+    totalAvailableValueTd.textContent = formatCurrency(totalAvailable);
+    totalAvailableValueTd.className = `currency ${getCurrencyClass(totalAvailable)}`;
+
+    // Re-calculate and display RTA after updating totals - Needs DB read for accuracy.
+    // We'll trigger this after the save operation instead.
+    // updateRTAFromMetadata(); // Placeholder for a function to read and display RTA
+}
+
+// --- NEW Helper Function: Parse Formatted Currency ---
+/** Parses a formatted currency string (like $1,234.56 or ($50.00)) into a number. */
+function parseCurrency(value) {
+    if (typeof value !== 'string') return 0;
+    let numStr = value.replace(/[$,]/g, ''); // Remove $ and commas
+    let number = 0;
+    if (numStr.startsWith('(') && numStr.endsWith(')')) {
+        numStr = '-' + numStr.substring(1, numStr.length - 1); // Handle negative parens
+    }
+    number = parseFloat(numStr);
+    return isNaN(number) ? 0 : number;
+}
+
 
 // --- Chart Data Calculation Function ---
 

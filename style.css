@@ -772,5 +772,36 @@ footer {
         cursor: not-allowed;
         opacity: 0.7;
     }
+
+    /* Style for editable cells */
+td.editable-budget {
+    cursor: pointer;
+    background-color: #e9f5ff; /* Light blue background to indicate editable */
+    transition: background-color 0.2s ease;
+}
+
+td.editable-budget:hover {
+    background-color: #d0eaff; /* Slightly darker on hover */
+}
+
+/* Style for the input field when editing */
+td.editable-budget input[type="number"] {
+    width: 95%; /* Fill most of the cell */
+    padding: 4px 6px;
+    font-size: inherit; /* Match table font size */
+    font-family: monospace; /* Match currency style */
+    text-align: right; /* Align right like currency */
+    border: 1px solid #007bff; /* Blue border to highlight */
+    border-radius: 3px;
+    box-sizing: border-box; /* Include padding/border in width */
+    /* Remove spinner arrows (optional) */
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+td.editable-budget input[type="number"]::-webkit-outer-spin-button,
+td.editable-budget input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
     
 }
