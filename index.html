@@ -182,6 +182,11 @@
         </section>
         <!-- === CHART SECTION === -->
         <section id="charts-section" class="main-section hidden">
+            <h2 class="view-header-nav"> <!-- Add class for potential styling -->
+                <button id="chart-prev-month" class="button button-small nav-button" aria-label="Previous month chart">< Prev</button>
+                <span>Spending Breakdown (<span id="chart-month-display">--</span>)</span>
+                <button id="chart-next-month" class="button button-small nav-button" aria-label="Next month chart">Next ></button>
+           </h2>
             <h2>Spending Breakdown (<span id="chart-month-display">--</span>)</h2>
             <div id="spending-chart-container" style="position: relative; height:60vh; width:80vw; max-width: 450px; margin: 15px auto;">
                 <canvas id="spendingPieChart"></canvas> <!-- Canvas element for Chart.js -->
@@ -190,6 +195,11 @@
         </section>
         <!-- === BUDGET VIEW SECTION === -->
         <section id="budget-view" class="main-section hidden">
+            <h2 class="view-header-nav"> <!-- Add class for potential styling -->
+                <button id="budget-prev-month" class="button button-small nav-button" aria-label="Previous month budget">< Prev</button>
+                <span>Budget for <span id="budget-view-month">--</span></span>
+                <button id="budget-next-month" class="button button-small nav-button" aria-label="Next month budget">Next ></button>
+            </h2>
             <h2>Budget for <span id="budget-view-month">--</span></h2>
             <div class="table-responsive-wrapper">
                 <table id="budget-table">

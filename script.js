@@ -99,6 +99,12 @@ const newCategoryGroupSelect = document.getElementById('new-category-group');
 const addCategoryStatusDiv = document.getElementById('add-category-status');
 const existingCategoriesListDiv = document.getElementById('existing-categories-list'); // The div containing the list
 
+// --- Date Navigation Buttons ---
+const budgetPrevMonthBtn = document.getElementById('budget-prev-month');
+const budgetNextMonthBtn = document.getElementById('budget-next-month');
+const chartPrevMonthBtn = document.getElementById('chart-prev-month');
+const chartNextMonthBtn = document.getElementById('chart-next-month');
+
 // --- Define Constants ---
 const DB_NAME = 'budgetAppDB';
 const DB_VERSION = 2; // <<<< INCREMENT DB VERSION <<<<
@@ -118,6 +124,10 @@ const SAVINGS_GROUP_NAME = "Savings Goals";
 const ARCHIVED_GROUP_NAME = "Archived";
 
 let currentMode = 'companion'; // Default mode, will be updated on init
+let currentBudgetMonth = null; // Stores "YYYY-MM" for the budget view
+let currentChartMonth = null;  // Stores "YYYY-MM" for the chart view
+let earliestDataMonth = null; // Stores "YYYY-MM" of the first transaction
+let latestDataMonth = null;   // Stores "YYYY-MM" of the last transaction (or current month)
 
 /**
  * Initializes the IndexedDB database.
@@ -234,6 +244,7 @@ async function initializeApp() {
         manageAccountsInfo?.classList.add('hidden'); // Hide companion mode message
         manageCategoriesInfo?.classList.add('hidden'); // Hide companion message
         setupStandaloneEventListeners(); 
+        setupNavButtonListeners(); 
         await loadDataFromDB();
         if (dashboardSection) dashboardSection.classList.remove('hidden');
         setActiveNavLink('dashboard-summary');
@@ -299,6 +310,47 @@ function setupStandaloneEventListeners() {
     }
     if (importStandaloneButton) {
         importStandaloneButton.addEventListener('click', handleStandaloneImport);
+    }
+}
+
+// --- Setup Listeners for Date Navigation Buttons ---
+function setupNavButtonListeners() {
+    if (budgetPrevMonthBtn) budgetPrevMonthBtn.addEventListener('click', handleBudgetNav);
+    if (budgetNextMonthBtn) budgetNextMonthBtn.addEventListener('click', handleBudgetNav);
+    if (chartPrevMonthBtn) chartPrevMonthBtn.addEventListener('click', handleChartNav);
+    if (chartNextMonthBtn) chartNextMonthBtn.addEventListener('click', handleChartNav);
+}
+
+// --- NEW: Event Handlers for Date Navigation ---
+function handleBudgetNav(event) {
+    const direction = event.target.id.includes('prev') ? 'prev' : 'next';
+    const current = currentBudgetMonth;
+    if (!current) return; // Cannot navigate if no month is set
+
+    const targetMonth = (direction === 'prev')
+        ? getPreviousPeriodJS(current)
+        : getNextPeriodJS(current);
+
+    if (targetMonth) {
+        updateBudgetView(targetMonth);
+    } else {
+        console.warn(`Could not calculate ${direction} month from ${current}`);
+    }
+}
+
+function handleChartNav(event) {
+    const direction = event.target.id.includes('prev') ? 'prev' : 'next';
+    const current = currentChartMonth;
+    if (!current) return;
+
+    const targetMonth = (direction === 'prev')
+        ? getPreviousPeriodJS(current)
+        : getNextPeriodJS(current);
+
+    if (targetMonth) {
+        updateChartView(targetMonth);
+    } else {
+        console.warn(`Could not calculate ${direction} month from ${current}`);
     }
 }
 
@@ -839,14 +891,25 @@ function updateCategoryGroup(categoryName, newGroupName) {
  */
 async function processBudgetData(data, mode) {
     console.log(`Processing budget data in ${mode} mode...`);
+    // --- Reset month state on new data load ---
+    currentBudgetMonth = null;
+    currentChartMonth = null;
+    earliestDataMonth = null;
+    latestDataMonth = null;
     if (!data) {
         console.warn("processBudgetData called with null data.");
         // Display default "no data" state
          clearDataDisplay();
+         const defaultPeriod = getCurrentRealMonth();
+         updateBudgetView(defaultPeriod); // Show empty state for current month
+         updateChartView(defaultPeriod); // Show empty state for current month
+          // Reset other displays
          displayRTA(0);
          displayAccountBalances({});
          displayDashboardSummary({ latestMonth: 'N/A', income: 0, spending: 0 });
          displayTransactions([], []);
+         displayExistingAccounts({});
+         displayExistingCategories([], {});
          renderBudgetTable([], { budgeted: 0, spent: 0, available: 0 }, 'N/A');
          renderSpendingChart(null); // Will show 'no data' message
         return;
@@ -871,15 +934,19 @@ async function processBudgetData(data, mode) {
             pendingTransactions = await loadPendingTransactions();
             updatePendingCountUI(pendingTransactions.length);
             allTransactionsForDisplay = [...data.transactions, ...pendingTransactions];
+            // Temporarily store pending transactions in localBudgetData for update functions
+            localBudgetData = { pendingTransactions: pendingTransactions };
 
         } else { // Standalone Mode
             // Data came from IndexedDB, store it in local variable
-            localBudgetData = JSON.parse(JSON.stringify(data));
-            // In standalone, all transactions are in the main store
-            allTransactionsForDisplay = data.transactions;
-            // Pending count should be 0 in standalone (as they are added directly)
-            updatePendingCountUI(0);
+            localBudgetData = JSON.parse(JSON.stringify(data)); // Store loaded data
+            allTransactionsForDisplay = data.transactions || [];
+            updatePendingCountUI(0); // No pending in standalone
         }
+        // --- Determine date range ---
+        earliestDataMonth = findEarliestMonth(allTransactionsForDisplay);
+        latestDataMonth = findLatestMonth(allTransactionsForDisplay);
+        const initialDisplayMonth = latestDataMonth || getCurrentRealMonth(); // Show latest data month or current real month
 
         // --- Populate UI elements (Common logic for both modes) ---
         populateAccountFilter(data.accounts, [filterAccountSelect, txAccountSelect]);
@@ -896,26 +963,31 @@ async function processBudgetData(data, mode) {
               if (newCategoryGroupSelect) newCategoryGroupSelect.innerHTML = '<option value="">N/A</option>';
         }
 
-        const latestMonth = findLatestMonth(allTransactionsForDisplay); // Use combined/all tx for latest month
-        const displayMonth = latestMonth || new Date().toISOString().slice(0, 7); // Fallback to current month if no tx
-
-
-        // --- Display Dashboard Summary ---
-         let monthSummary = { latestMonth: displayMonth, income: 0, spending: 0 };
-         if (latestMonth) { // Only calculate if transactions exist
-             monthSummary = {
-                 latestMonth: displayMonth,
-                 ...calculatePeriodSummary(displayMonth, allTransactionsForDisplay)
-             };
-         }
+        // --- Display Dashboard (uses latest calculated month usually) ---
+        let dashboardSummaryMonth = latestDataMonth || 'N/A';
+        let monthSummary = { latestMonth: dashboardSummaryMonth, income: 0, spending: 0 };
+        if (latestDataMonth) {
+            monthSummary = {
+                latestMonth: dashboardSummaryMonth,
+                ...calculatePeriodSummary(dashboardSummaryMonth, allTransactionsForDisplay)
+            };
+        }
         displayDashboardSummary(monthSummary);
         displayAccountBalances(data.accounts);
         displayRTA(data.ready_to_assign);
-        displayTransactions(mode === 'companion' ? data.transactions : [], // Original only for companion
-                             mode === 'companion' ? pendingTransactions : allTransactionsForDisplay); // Pending for companion, all for standalone (but marked differently)
+
+        // --- Display Transactions List (shows all relevant transactions) ---
+        displayTransactions(
+            mode === 'companion' ? data.transactions : [],
+            mode === 'companion' ? pendingTransactions : allTransactionsForDisplay
+        );
 
         resetAllFilters();
 
+        // --- Update Views for Initial Month ---
+        updateBudgetView(initialDisplayMonth);
+        updateChartView(initialDisplayMonth);
+        
         // --- Calculate and Display Budget View ---
         const budgetTitleSuffix = (mode === 'companion' && pendingTransactions.length > 0) ? " (incl. pending)" : "";
         const budgetViewData = calculateBudgetViewData(
@@ -943,7 +1015,7 @@ async function processBudgetData(data, mode) {
         if (dashboardSection) dashboardSection.classList.remove('hidden');
         // Other sections are shown via navigation
 
-        updateStatus(`Data processed for ${mode} mode.`, "success");
+        updateStatus(`Data processed for ${mode} mode. Displaying ${initialDisplayMonth}.`, "success");
 
     } catch (uiError) {
         console.error("Error updating UI:", uiError);
@@ -959,6 +1031,17 @@ async function processBudgetData(data, mode) {
 }
 
 // --- Budget Calculation Helper Functions ---
+
+/**
+ * Gets the current real-world month in "YYYY-MM" format.
+ * @returns {string}
+ */
+function getCurrentRealMonth() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    return `${year}-${month}`;
+}
 
 /**
  * Gets the previous month's period string (YYYY-MM).
@@ -983,6 +1066,155 @@ function getPreviousPeriodJS(periodStr) {
         console.error("Error getting previous period:", e);
         return null;
     }
+}
+
+/**
+ * Gets the next month's period string (YYYY-MM).
+ * @param {string} periodStr The current period (YYYY-MM).
+ * @returns {string|null} The next period string or null if input is invalid.
+ */
+function getNextPeriodJS(periodStr) {
+    if (!periodStr || !/^\d{4}-\d{2}$/.test(periodStr)) {
+        return null;
+    }
+    try {
+        const [year, month] = periodStr.split('-').map(Number);
+        // Create a date object for the first of the current month
+        const currentDate = new Date(year, month - 1, 1); // month is 0-indexed
+        // Add one month. setMonth handles year rollover automatically.
+        currentDate.setMonth(currentDate.getMonth() + 1);
+        // Format the resulting date
+        const nextYear = currentDate.getFullYear();
+        const nextMonth = (currentDate.getMonth() + 1).toString().padStart(2, '0');
+        return `${nextYear}-${nextMonth}`;
+    } catch (e) {
+        console.error("Error getting next period:", e);
+        return null;
+    }
+}
+
+/**
+ * Updates the Budget View section for a specific period.
+ * @param {string} period The target period ("YYYY-MM").
+ */
+function updateBudgetView(period) {
+    console.log(`Updating Budget View for: ${period}`);
+    currentBudgetMonth = period; // Update state
+
+    const data = (currentMode === 'standalone') ? localBudgetData : originalBudgetData;
+    if (!data) {
+        console.warn("No data available to update budget view.");
+        renderBudgetTable([], { budgeted: 0, spent: 0, available: 0 }, period); // Render empty state
+        return;
+    }
+
+    // Determine transactions to use based on mode
+    let transactionsToUse = [];
+    let titleSuffix = "";
+    if (currentMode === 'standalone') {
+        transactionsToUse = data.transactions || [];
+    } else { // Companion mode
+        const pending = localBudgetData?.pendingTransactions || []; // Assume pending are stored here temporarily
+        transactionsToUse = [...(data.transactions || []), ...pending];
+        if (pending.length > 0) titleSuffix = " (incl. pending)";
+    }
+
+    // Calculate data for the specific period
+    const budgetViewData = calculateBudgetViewData(
+        period,
+        data.categories || [],
+        data.budget_periods || {},
+        transactionsToUse,
+        data.category_groups || {}
+    );
+
+    // Render the table
+    renderBudgetTable(budgetViewData.rows, budgetViewData.totals, period, titleSuffix);
+
+    // Update navigation button states
+    updateNavButtonStates(budgetPrevMonthBtn, budgetNextMonthBtn, period);
+}
+
+/**
+ * Updates the Chart View section for a specific period.
+ * @param {string} period The target period ("YYYY-MM").
+ */
+function updateChartView(period) {
+    console.log(`Updating Chart View for: ${period}`);
+    currentChartMonth = period; // Update state
+
+    const data = (currentMode === 'standalone') ? localBudgetData : originalBudgetData;
+     if (!data) {
+        console.warn("No data available to update chart view.");
+        renderSpendingChart(null); // Render empty state
+        if (chartMonthDisplaySpan) chartMonthDisplaySpan.textContent = period || '--';
+        return;
+    }
+
+    // Determine transactions to use based on mode
+    let transactionsToUse = [];
+    let titleSuffix = "";
+     if (currentMode === 'standalone') {
+        transactionsToUse = data.transactions || [];
+    } else { // Companion mode
+        const pending = localBudgetData?.pendingTransactions || [];
+        transactionsToUse = [...(data.transactions || []), ...pending];
+         if (pending.length > 0) titleSuffix = " (incl. pending)";
+    }
+     if (chartMonthDisplaySpan) chartMonthDisplaySpan.textContent = period + titleSuffix;
+
+
+    // Calculate chart data
+    const chartData = calculateSpendingBreakdown(
+        period,
+        transactionsToUse,
+        data.category_groups || {}
+    );
+
+    // Render the chart
+    renderSpendingChart(chartData); // Handles null data internally
+
+    // Update navigation button states
+    updateNavButtonStates(chartPrevMonthBtn, chartNextMonthBtn, period);
+}
+
+/**
+ * Updates the enabled/disabled state of Previous/Next month buttons.
+ * @param {HTMLButtonElement} prevBtn The Previous button element.
+ * @param {HTMLButtonElement} nextBtn The Next button element.
+ * @param {string} displayedPeriod The currently displayed period ("YYYY-MM").
+ */
+function updateNavButtonStates(prevBtn, nextBtn, displayedPeriod) {
+    if (!prevBtn || !nextBtn || !displayedPeriod) return;
+
+    const currentRealMonth = getCurrentRealMonth();
+
+    // Disable "Next" if displaying the current real month or later
+    nextBtn.disabled = displayedPeriod >= currentRealMonth;
+
+    // Disable "Previous" if displaying the earliest month with data (or some limit)
+    prevBtn.disabled = !!earliestDataMonth && displayedPeriod <= earliestDataMonth;
+}
+
+/**
+ * Finds the earliest month (YYYY-MM) present in transaction data.
+ * @param {Array} transactions The transactions array.
+ * @returns {string|null} The earliest month string or null if none found.
+ */
+function findEarliestMonth(transactions) {
+    let earliest = null;
+    if (!transactions || transactions.length === 0) return null;
+    transactions.forEach(tx => {
+        if (tx.date && typeof tx.date === 'string' && tx.date.length >= 7) {
+            const month = tx.date.substring(0, 7);
+            if (/^\d{4}-\d{2}$/.test(month)) {
+                if (earliest === null || month < earliest) {
+                    earliest = month;
+                }
+            }
+        }
+    });
+    return earliest;
 }
 
 /**
