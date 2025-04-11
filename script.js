@@ -110,7 +110,7 @@ const chartNextMonthBtn = document.getElementById('chart-next-month');
 const DB_NAME = 'budgetAppDB';
 const DB_VERSION = 2; // <<<< INCREMENT DB VERSION <<<<
 const PENDING_TX_STORE_NAME = 'pendingTransactions'; // Only for Companion Mode ideally
-// --- NEW: IndexedDB Store Names for Standalone Mode ---
+// --- IndexedDB Store Names for Standalone Mode ---
 const TX_STORE_NAME = 'transactions';
 const ACCOUNT_STORE_NAME = 'accounts';
 const CATEGORY_STORE_NAME = 'categories';
@@ -327,7 +327,7 @@ function setupNavButtonListeners() {
     if (chartNextMonthBtn) chartNextMonthBtn.addEventListener('click', handleChartNav);
 }
 
-// --- NEW: Event Handlers for Date Navigation ---
+// --- Event Handlers for Date Navigation ---
 function handleBudgetNav(event) {
     const direction = event.target.id.includes('prev') ? 'prev' : 'next';
     const current = currentBudgetMonth;
@@ -1696,7 +1696,7 @@ function updateBudgetTableTotals() {
     // updateRTAFromMetadata(); // Placeholder for a function to read and display RTA
 }
 
-// --- NEW Helper Function: Parse Formatted Currency ---
+// --- Helper Function: Parse Formatted Currency ---
 /** Parses a formatted currency string (like $1,234.56 or ($50.00)) into a number. */
 function parseCurrency(value) {
     if (typeof value !== 'string') return 0;
@@ -2013,7 +2013,7 @@ function displayTransactions(originalTransactions = [], displayTransactions = []
 
 
     if (combinedForSort.length === 0) {
-        transactionsTbody.innerHTML = `<tr><td colspan="6">No transactions found.</td></tr>`;
+        transactionsTbody.innerHTML = `<tr><td colspan="7">No transactions found.</td></tr>`;
         if (noResultsMessage) noResultsMessage.classList.add('hidden');
         return;
     }
@@ -2072,6 +2072,33 @@ function displayTransactions(originalTransactions = [], displayTransactions = []
              case 'transfer': cellAmount.classList.add('zero-currency'); break;
              default: cellAmount.classList.add('zero-currency');
          }
+         // --- DELETE BUTTON CELL ---
+        const cellAction = row.insertCell(6);
+        cellAction.classList.add('td-action');
+        // Create the delete button ONLY if it's a valid transaction (has an ID)
+        // and if it's either a Pending transaction (Companion) or any transaction (Standalone)
+        // Don't allow deleting original/synced transactions in Companion mode visually.
+        if (transactionDbId && (isPending || currentMode === 'standalone')) {
+            const deleteButton = document.createElement('button');
+            deleteButton.classList.add('delete-tx-button');
+            deleteButton.setAttribute('aria-label', 'Delete Transaction');
+            deleteButton.title = 'Delete Transaction';
+            deleteButton.dataset.txId = transactionDbId; // Use the DB ID as the key
+            deleteButton.dataset.txIsPending = isPending; // Store if it was pending
+
+            const deleteIcon = document.createElement('i');
+            deleteIcon.classList.add('fa-solid', 'fa-trash-can');
+            deleteButton.appendChild(deleteIcon);
+
+            // Add event listener
+            deleteButton.addEventListener('click', handleDeleteTransactionClick);
+
+            cellAction.appendChild(deleteButton);
+        } else {
+            // Optionally add a placeholder or leave empty for non-deletable rows
+            // cellAction.textContent = '-'; // Example placeholder
+        }
+        // --- END OF DELETE BUTTON CELL ---
     });
 
     if (noResultsMessage) noResultsMessage.classList.add('hidden');
@@ -2137,6 +2164,72 @@ function populateCategoryFilter(categories = [], transactions = [], selectElemen
         });
     });
 }
+// --- Transaction Deletion Handler ---
+async function handleDeleteTransactionClick(event) {
+    const button = event.currentTarget;
+    const transactionId = button.dataset.txId;
+    const isPending = button.dataset.txIsPending === 'true'; // Convert string back to boolean
+
+    // Ensure we have an ID (should always be the case if button exists)
+    if (!transactionId) {
+        console.error("Delete button clicked but no transaction ID found.");
+        updateStatus("Error: Could not identify transaction to delete.", "error");
+        return;
+    }
+
+    // --- Confirmation ---
+    if (!confirm(`Are you sure you want to delete this transaction? This action cannot be undone.`)) {
+        return; // User cancelled
+    }
+
+    // Disable button to prevent double clicks
+    button.disabled = true;
+    const icon = button.querySelector('i');
+    if (icon) icon.classList.replace('fa-trash-can', 'fa-spinner'); icon.classList.add('fa-spin'); // Show loading spinner
+
+    try {
+        let success = false;
+        if (currentMode === 'standalone') {
+            // Standalone: Delete from main store, adjust balances/RTA
+            console.log(`Attempting to delete standalone transaction ID: ${transactionId}`);
+            // Need to parse the ID back to a number if it's auto-incremented
+            await deleteTransactionStandalone(parseInt(transactionId, 10));
+            success = true;
+            // UI update is handled by loadDataFromDB called within deleteTransactionStandalone
+
+        } else { // Companion Mode
+            // Companion: Only delete if it's a pending transaction
+            if (isPending) {
+                console.log(`Attempting to delete pending transaction ID: ${transactionId}`);
+                // Need to parse the ID back to a number as it's the auto-incremented key
+                await deletePendingTransaction(parseInt(transactionId, 10));
+                success = true;
+                // Manually update UI for pending deletion
+                button.closest('tr')?.remove(); // Remove row visually
+                const pending = await loadPendingTransactions();
+                updatePendingCountUI(pending.length); // Update count
+                // Maybe re-filter if filters are active? For simplicity, just remove the row.
+                filterTransactions(); // Re-apply filters to update no-results message if needed
+            } else {
+                // Should not happen as button shouldn't be added for non-pending in companion mode
+                console.warn("Attempted to delete a non-pending transaction in Companion Mode.");
+                updateStatus("Cannot delete synced transactions in Companion Mode.", "info");
+            }
+        }
+
+        if (success) {
+            updateStatus("Transaction deleted successfully.", "success");
+        }
+
+    } catch (error) {
+        console.error("Failed to delete transaction:", error);
+        updateStatus(`Error deleting transaction: ${error}`, "error");
+        // Re-enable button on error
+        button.disabled = false;
+         if (icon) icon.classList.replace('fa-spinner', 'fa-trash-can'); icon.classList.remove('fa-spin');
+    }
+    // No finally needed as button is either removed on success or re-enabled on error
+}
 
 // --- IndexedDB Interaction Functions (Separated by Mode) ---
 
@@ -2155,6 +2248,42 @@ function savePendingTransaction(transaction) {
         request.onerror = (event) => { console.error("Error saving pending tx:", event.target.error); reject("Error saving transaction."); };
         tx.oncomplete = () => console.log("Pending TX saved ID:", request.result);
         tx.onerror = (event) => console.error("Pending TX save transaction error:", event.target.error);
+    });
+}
+
+// --- Delete Pending Transaction (Companion Mode) ---
+/**
+ * Deletes a specific pending transaction from IndexedDB (Companion Mode).
+ * @param {number} id The auto-incremented ID of the pending transaction to delete.
+ * @returns {Promise<void>}
+ */
+function deletePendingTransaction(id) {
+    return new Promise(async (resolve, reject) => {
+        if (!db) return reject("Database not initialized.");
+        if (currentMode !== 'companion') return reject("Can only delete pending in Companion mode.");
+        if (typeof id !== 'number' || isNaN(id)) return reject("Invalid ID provided for pending deletion.");
+
+        const tx = db.transaction(PENDING_TX_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(PENDING_TX_STORE_NAME);
+        const request = store.delete(id); // Use the ID which is the keyPath
+
+        request.onsuccess = () => {
+            console.log(`Pending transaction ID ${id} deleted from DB.`);
+        };
+        request.onerror = (event) => {
+            console.error(`Error deleting pending tx ID ${id}:`, event.target.error);
+            reject(`Error deleting pending transaction: ${event.target.error}`);
+        };
+
+        tx.oncomplete = () => {
+            console.log(`Delete pending transaction ID ${id} transaction complete.`);
+            resolve();
+        };
+        tx.onerror = (event) => {
+            console.error("Delete pending transaction failed:", event.target.error);
+            // Reject might have been called by request.onerror already
+            reject(`Transaction failed for pending delete: ${event.target.error}`);
+        };
     });
 }
 
@@ -2496,6 +2625,163 @@ async function clearAllStandaloneData() {
         transaction.onerror = (event) => {
             console.error("Standalone data clearing transaction error:", event.target.error);
             reject("Failed to clear all standalone data.");
+        };
+    });
+}
+
+// --- Delete Transaction (Standalone Mode) ---
+/**
+ * Deletes a transaction from the main store and adjusts account balance and RTA accordingly.
+ * Reloads all data afterwards to refresh the UI.
+ * @param {number} transactionId The ID (keyPath value) of the transaction to delete.
+ * @returns {Promise<void>}
+ */
+function deleteTransactionStandalone(transactionId) {
+    return new Promise(async (resolve, reject) => {
+        if (!db) return reject("Database not initialized.");
+        if (currentMode !== 'standalone') return reject("Can only delete main transactions in Standalone mode.");
+        if (typeof transactionId !== 'number' || isNaN(transactionId)) return reject("Invalid ID provided for standalone deletion.");
+
+        const transaction = db.transaction(
+            [TX_STORE_NAME, ACCOUNT_STORE_NAME, METADATA_STORE_NAME],
+            'readwrite'
+        );
+        const txStore = transaction.objectStore(TX_STORE_NAME);
+        const accStore = transaction.objectStore(ACCOUNT_STORE_NAME);
+        const metaStore = transaction.objectStore(METADATA_STORE_NAME);
+
+        let deletedTxData = null;
+
+        // 1. Get the transaction data BEFORE deleting it
+        const getReq = txStore.get(transactionId);
+
+        getReq.onerror = (event) => {
+            console.error(`Error fetching transaction ID ${transactionId} for deletion:`, event.target.error);
+            transaction.abort();
+            reject(`Could not find transaction to delete: ${event.target.error}`);
+        };
+
+        getReq.onsuccess = (event) => {
+            deletedTxData = event.target.result;
+
+            if (!deletedTxData) {
+                transaction.abort(); // Abort if transaction doesn't exist
+                return reject(`Transaction with ID ${transactionId} not found.`);
+            }
+
+            // 2. Delete the transaction itself
+            const deleteReq = txStore.delete(transactionId);
+            deleteReq.onerror = (event) => {
+                console.error(`Error deleting transaction ID ${transactionId} from store:`, event.target.error);
+                transaction.abort();
+                reject(`Failed to delete transaction record: ${event.target.error}`);
+            };
+
+            deleteReq.onsuccess = () => {
+                console.log(`Transaction record ID ${transactionId} deleted.`);
+
+                // 3. Adjust Account Balance
+                const amount = parseFloat(deletedTxData.amount || 0);
+                const accountName = deletedTxData.account;
+                const txType = deletedTxData.type;
+
+                if (!accountName) {
+                    // Should not happen with validation, but handle defensively
+                    console.warn(`Transaction ID ${transactionId} has no account name. Skipping balance adjustment.`);
+                    // Continue without balance adjustment if no account? Or abort? Let's continue for now.
+                    adjustRTAIfNeeded(); // Proceed to RTA adjustment check
+                    return;
+                }
+
+                const accGetReq = accStore.get(accountName);
+                accGetReq.onerror = (event) => {
+                    console.error(`Error fetching account '${accountName}' for balance adjustment:`, event.target.error);
+                    transaction.abort(); // Abort if we can't get the account
+                    reject(`Failed to get account for balance adjustment: ${event.target.error}`);
+                };
+                accGetReq.onsuccess = (event) => {
+                    const accountData = event.target.result;
+                    if (!accountData) {
+                        console.warn(`Account '${accountName}' not found during deletion adjustment. Balance may be incorrect.`);
+                        // Abort or continue? Let's continue but warn.
+                        adjustRTAIfNeeded(); // Proceed to RTA adjustment check
+                        return;
+                    }
+
+                    // REVERSE the transaction's effect
+                    if (txType === 'income' || txType === 'refund') {
+                        accountData.balance -= amount;
+                    } else if (txType === 'expense') {
+                        accountData.balance += amount;
+                    }
+                    // Transfers are more complex and not handled here yet
+
+                    const accPutReq = accStore.put(accountData);
+                    accPutReq.onerror = (event) => {
+                        console.error(`Error saving updated balance for account '${accountName}':`, event.target.error);
+                        transaction.abort(); // Abort if balance update fails
+                        reject(`Failed to save adjusted account balance: ${event.target.error}`);
+                    };
+                    accPutReq.onsuccess = () => {
+                        console.log(`Account '${accountName}' balance adjusted successfully.`);
+                        // 4. Adjust RTA if it was an Income transaction
+                        adjustRTAIfNeeded();
+                    };
+                };
+            }; // End deleteReq.onsuccess
+        }; // End getReq.onsuccess
+
+        // Helper function to adjust RTA
+        function adjustRTAIfNeeded() {
+            if (deletedTxData.type === 'income') {
+                const amount = parseFloat(deletedTxData.amount || 0);
+                const metaGetReq = metaStore.get('appData');
+                metaGetReq.onerror = (event) => {
+                    console.error("Error fetching metadata for RTA adjustment:", event.target.error);
+                    transaction.abort(); // Abort if metadata fetch fails
+                    reject(`Failed to get metadata for RTA adjustment: ${event.target.error}`);
+                };
+                metaGetReq.onsuccess = (event) => {
+                    const metadata = event.target.result || { key: 'appData', ready_to_assign: 0.0 };
+                    metadata.ready_to_assign -= amount; // Subtract the income amount
+
+                    const metaPutReq = metaStore.put(metadata);
+                    metaPutReq.onerror = (event) => {
+                        console.error("Error saving adjusted RTA metadata:", event.target.error);
+                        transaction.abort(); // Abort if RTA update fails
+                        reject(`Failed to save adjusted RTA: ${event.target.error}`);
+                    };
+                    metaPutReq.onsuccess = () => {
+                        console.log("RTA adjusted successfully.");
+                        // If we reach here, RTA adjustment is done (or wasn't needed)
+                        // The transaction.oncomplete will handle final resolution
+                    };
+                };
+            } else {
+                // Not income, no RTA adjustment needed from this tx deletion
+                // The transaction will complete successfully if all previous steps did
+            }
+        } // End adjustRTAIfNeeded
+
+
+        // Transaction completion/error handling
+        transaction.oncomplete = async () => {
+            console.log("Standalone delete transaction complete. Reloading data...");
+            // --- CRITICAL: Reload data to update ALL UI elements ---
+            try {
+                await loadDataFromDB(); // Reloads data and refreshes UI (dashboard, budget, etc.)
+                resolve(); // Resolve the main promise AFTER data is reloaded
+            } catch (loadError) {
+                console.error("Data reload failed after deletion:", loadError);
+                // Deletion likely succeeded, but UI might be stale.
+                reject("Transaction deleted, but failed to refresh data.");
+            }
+        };
+
+        transaction.onerror = (event) => {
+            console.error("Standalone delete transaction failed:", event.target.error);
+            // Reject was likely called earlier by specific request errors
+            reject(`Transaction failed during standalone delete: ${event.target.error}`);
         };
     });
 }

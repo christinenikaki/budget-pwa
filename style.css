@@ -178,6 +178,40 @@ header {
 #transactions-table tbody tr:nth-child(even) {
     background-color: #f8f9fa;
 }
+#transactions-table th.th-action, /* Style for the new header */
+#transactions-table td.td-action { /* Style for the new cell */
+    width: 3em; /* Adjust width as needed */
+    text-align: center;
+    padding-left: 5px;
+    padding-right: 5px;
+    vertical-align: middle; /* Vertically center button */
+}
+
+/* Style for the delete button */
+.delete-tx-button {
+    background: none;
+    border: none;
+    color: #dc3545; /* Red color for delete */
+    cursor: pointer;
+    padding: 2px 5px;
+    font-size: 1.1em; /* Make icon slightly larger */
+    line-height: 1; /* Prevent extra spacing */
+    vertical-align: middle;
+    opacity: 0.7; /* Slightly transparent normally */
+    transition: opacity 0.2s ease, color 0.2s ease;
+}
+
+.delete-tx-button:hover {
+    color: #a71d2a; /* Darker red on hover */
+    opacity: 1; /* Fully opaque on hover */
+}
+
+.delete-tx-button:disabled {
+    color: #ccc;
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
 /* Style for the Add Transaction form section */
 #add-expense-form h2,
 #sync-section h2 {
@@ -553,19 +587,16 @@ footer {
         /* background-color is already set to #e9ecef, which is good */
     }
 
-    /* Style the table footers (if desired) */
-    #transactions-table tfoot td,
-    #transactions-table tfoot th, /* If using th in tfoot */
-    #budget-table tfoot td,
-    #budget-table tfoot th { /* If using th in tfoot */
+    #transactions-table thead th:last-child, /* Target last header cell */
+    #transactions-table tfoot td:last-child,
+    #transactions-table tfoot th:last-child {
+        /* Ensure sticky positioning applies if you are using it */
         position: -webkit-sticky; /* Safari */
         position: sticky;
-        bottom: 0; /* Stick to the bottom of the scrolling container */
-        z-index: 10; /* Ensure footer is above table body content */
-        /* background-color is already set (e.g. #e9ecef), which is good */
-        /* Ensure footer background matches header or is distinct */
+        /* right: 0; */ /* Might need 'right: 0' if you want it sticky on the right */
+        /* z-index needs to be same as other sticky cells */
     }
-
+    
     /* Ensure the table inside uses available width but can grow */
     .table-responsive-wrapper table {
         width: 100%; /* Use full width of the wrapper */
@@ -583,6 +614,13 @@ footer {
         padding: 6px 8px; /* Slightly reduce padding */
         font-size: 0.9em; /* Slightly smaller font */
         white-space: nowrap; /* Prevent text wrapping in cells - forces scroll */
+    }
+    #transactions-table th.th-action,
+    #transactions-table td.td-action {
+        width: 2.5em; /* Slightly smaller on mobile */
+    }
+    .delete-tx-button {
+        font-size: 1em; /* Slightly smaller icon on mobile */
     }
 
     /* Allow wrapping specifically for longer text columns if needed */
