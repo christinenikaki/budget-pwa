@@ -2003,12 +2003,24 @@ function displayTransactions(originalTransactions = [], displayTransactions = []
 
     if (useOriginal) {
         // Mark original as not pending, pending as pending
-        const markedOriginal = originalTransactions.map(tx => ({ ...tx, isPending: false }));
-        const markedPending = displayTransactions.map(tx => ({ ...tx, isPending: true }));
+        const markedOriginal = originalTransactions.map(tx => ({
+            ...tx,
+            isPending: false,
+            db_id: tx.id || null // Explicitly assign db_id from original id, fallback to null 
+       }));
+       const markedPending = displayTransactions.map(tx => ({
+        ...tx,
+        isPending: true,
+        db_id: tx.id // This 'id' comes from the pending store's keyPath
+    }));
         combinedForSort = [...markedOriginal, ...markedPending];
     } else {
         // In standalone, all transactions are from the main store, none are "pending" in the same way
-        combinedForSort = displayTransactions.map(tx => ({ ...tx, isPending: false }));
+        combinedForSort = displayTransactions.map(tx => ({
+            ...tx,
+            isPending: false,
+            db_id: tx.id // This 'id' comes from the main transaction store's keyPath
+        }));
     }
 
 
@@ -2025,12 +2037,18 @@ function displayTransactions(originalTransactions = [], displayTransactions = []
          // Secondary sort: maybe by ID or timestamp if available?
          const idA = a.id || 0;
          const idB = b.id || 0;
-         return idB - idA; // Example: higher ID (later entry) first on same day
+         // Simple numeric sort works fine here if IDs are numbers or null/0
+         if (typeof idA === 'number' && typeof idB === 'number') {
+            return idB - idA;
+        }
+        // Fallback sort if IDs aren't numbers (less likely but safe)
+        return String(idB).localeCompare(String(idA));
      });
 
     sortedTransactions.forEach(tx => {
         const row = transactionsTbody.insertRow();
         const isPending = tx.isPending; // Use the flag we added
+        const transactionDbId = tx.db_id;
 
         // Store data attributes
         const txDate = tx.date || '';
@@ -2043,6 +2061,7 @@ function displayTransactions(originalTransactions = [], displayTransactions = []
         const txMemo = tx.memo || '';
         row.dataset.date = txDate; row.dataset.account = txAccount; row.dataset.category = txCategory;
         row.dataset.payee = txPayee; row.dataset.memo = txMemo;
+        row.dataset.dbId = transactionDbId;
 
         // Populate Cells (with icon)
         const cellIcon = row.insertCell(0); cellIcon.classList.add('td-icon');
@@ -2078,7 +2097,8 @@ function displayTransactions(originalTransactions = [], displayTransactions = []
         // Create the delete button ONLY if it's a valid transaction (has an ID)
         // and if it's either a Pending transaction (Companion) or any transaction (Standalone)
         // Don't allow deleting original/synced transactions in Companion mode visually.
-        if (transactionDbId && (isPending || currentMode === 'standalone')) {
+        // *** Check transactionDbId is not null ***
+        if (transactionDbId !== null && (isPending || currentMode === 'standalone')) {
             const deleteButton = document.createElement('button');
             deleteButton.classList.add('delete-tx-button');
             deleteButton.setAttribute('aria-label', 'Delete Transaction');
@@ -2095,10 +2115,10 @@ function displayTransactions(originalTransactions = [], displayTransactions = []
 
             cellAction.appendChild(deleteButton);
         } else {
-            // Optionally add a placeholder or leave empty for non-deletable rows
-            // cellAction.textContent = '-'; // Example placeholder
+            // Leave empty for non-deletable rows
         }
         // --- END OF DELETE BUTTON CELL ---
+
     });
 
     if (noResultsMessage) noResultsMessage.classList.add('hidden');
