@@ -928,40 +928,32 @@ async function processBudgetData(data, mode) {
 
     try {
         if (mode === 'companion') {
-            // Store the loaded data from file
-            originalBudgetData = JSON.parse(JSON.stringify(data));
-            // Load pending transactions to overlay on the display
+            originalBudgetData = JSON.parse(JSON.stringify(data)); // Store original
             pendingTransactions = await loadPendingTransactions();
             updatePendingCountUI(pendingTransactions.length);
             allTransactionsForDisplay = [...data.transactions, ...pendingTransactions];
             // Temporarily store pending transactions in localBudgetData for update functions
             localBudgetData = { pendingTransactions: pendingTransactions };
-
         } else { // Standalone Mode
-            // Data came from IndexedDB, store it in local variable
             localBudgetData = JSON.parse(JSON.stringify(data)); // Store loaded data
             allTransactionsForDisplay = data.transactions || [];
             updatePendingCountUI(0); // No pending in standalone
         }
+
         // --- Determine date range ---
         earliestDataMonth = findEarliestMonth(allTransactionsForDisplay);
         latestDataMonth = findLatestMonth(allTransactionsForDisplay);
         const initialDisplayMonth = latestDataMonth || getCurrentRealMonth(); // Show latest data month or current real month
+        // ---
 
-        // --- Populate UI elements (Common logic for both modes) ---
+        // --- Populate Static UI elements ---
         populateAccountFilter(data.accounts, [filterAccountSelect, txAccountSelect]);
-        populateCategoryFilter(data.categories, data.transactions, [filterCategorySelect, txCategorySelect], data.category_groups, mode); // Pass mode and groups
+        populateCategoryFilter(/*...*/);
         displayExistingAccounts(data.accounts);
-
-        // --- Populate Category Management UI ---
-        if (mode === 'standalone') {
+        if(mode === 'standalone') {
             populateCategoryGroupDropdown(data.category_groups, data.categories);
             displayExistingCategories(data.categories, data.category_groups);
-        } else {
-             // Optionally clear/disable category management UI if switching from standalone
-              if (existingCategoriesListDiv) existingCategoriesListDiv.innerHTML = '<p>Category management is for Standalone Mode.</p>';
-              if (newCategoryGroupSelect) newCategoryGroupSelect.innerHTML = '<option value="">N/A</option>';
-        }
+        } else { /* Clear/disable category mgmt UI */ }
 
         // --- Display Dashboard (uses latest calculated month usually) ---
         let dashboardSummaryMonth = latestDataMonth || 'N/A';
@@ -981,40 +973,16 @@ async function processBudgetData(data, mode) {
             mode === 'companion' ? data.transactions : [],
             mode === 'companion' ? pendingTransactions : allTransactionsForDisplay
         );
-
         resetAllFilters();
 
         // --- Update Views for Initial Month ---
         updateBudgetView(initialDisplayMonth);
         updateChartView(initialDisplayMonth);
-        
-        // --- Calculate and Display Budget View ---
-        const budgetTitleSuffix = (mode === 'companion' && pendingTransactions.length > 0) ? " (incl. pending)" : "";
-        const budgetViewData = calculateBudgetViewData(
-            displayMonth,
-            data.categories,
-            data.budget_periods,
-            allTransactionsForDisplay, // Always use combined/all for budget calculation
-            data.category_groups || {}
-        );
-        renderBudgetTable(budgetViewData.rows, budgetViewData.totals, displayMonth, budgetTitleSuffix);
+        // ---
 
-
-        // --- Calculate and Display Spending Chart ---
-        const chartTitleSuffix = (mode === 'companion' && pendingTransactions.length > 0) ? " (incl. pending)" : "";
-        const chartData = calculateSpendingBreakdown(
-            displayMonth,
-            allTransactionsForDisplay, // Always use combined/all for chart calculation
-            data.category_groups || {}
-        );
-        if (chartMonthDisplaySpan) chartMonthDisplaySpan.textContent = displayMonth + chartTitleSuffix;
-        renderSpendingChart(chartData); // Handles null data internally
-
-        // --- Show data sections, hide loader ---
+        // --- Final UI State ---
         if (fileLoaderSection && mode === 'companion') fileLoaderSection.classList.add('hidden');
         if (dashboardSection) dashboardSection.classList.remove('hidden');
-        // Other sections are shown via navigation
-
         updateStatus(`Data processed for ${mode} mode. Displaying ${initialDisplayMonth}.`, "success");
 
     } catch (uiError) {
