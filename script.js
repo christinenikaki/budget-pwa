@@ -9,6 +9,7 @@ const dashboardSection = document.getElementById('dashboard-summary');
 const transactionsSection = document.getElementById('transactions-list');
 const balancesList = document.getElementById('balances-list');
 const rtaValueElement = document.getElementById('rta-value');
+const budgetViewRtaValueElement = document.getElementById('budget-view-rta-value'); 
 const transactionsTbody = document.getElementById('transactions-tbody');
 const currentYearSpan = document.getElementById('current-year');
 const summaryMonthElement = document.getElementById('summary-month');
@@ -1903,6 +1904,10 @@ function updateStatus(message, type = "info") {
 function clearDataDisplay() {
     if (balancesList) balancesList.innerHTML = '<li>--</li>';
     if (rtaValueElement) { rtaValueElement.textContent = '--'; rtaValueElement.className = 'summary-value zero-currency'; }
+    if (budgetViewRtaValueElement) { // <-- ADD THIS BLOCK
+        budgetViewRtaValueElement.textContent = '--';
+        budgetViewRtaValueElement.className = 'summary-value zero-currency';
+    }
     if (transactionsTbody) transactionsTbody.innerHTML = '<tr><td colspan="6">No data loaded.</td></tr>';
     if (summaryMonthElement) summaryMonthElement.textContent = '--';
     if (summaryIncomeElement) { summaryIncomeElement.textContent = '--'; summaryIncomeElement.className = ''; }
@@ -1955,9 +1960,20 @@ function displayDashboardSummary(summaryData) {
 
 /** Displays the Ready to Assign value. */
 function displayRTA(rta = 0.0) {
-    if (!rtaValueElement) return;
-    rtaValueElement.textContent = formatCurrency(rta);
-    rtaValueElement.className = `summary-value currency ${getCurrencyClass(rta, true)}`; // Allow positive green
+    const formattedRTA = formatCurrency(rta);
+    const rtaClass = `summary-value currency ${getCurrencyClass(rta, true)}`; // Allow positive green
+
+    // Update original dashboard RTA (will only be visible if dashboard section is shown)
+    if (rtaValueElement) {
+        rtaValueElement.textContent = formattedRTA;
+        rtaValueElement.className = rtaClass;
+    }
+
+    // Update budget view RTA (will only be visible if budget view section is shown)
+    if (budgetViewRtaValueElement) {
+        budgetViewRtaValueElement.textContent = formattedRTA;
+        budgetViewRtaValueElement.className = rtaClass;
+    }
 }
 
 /**
