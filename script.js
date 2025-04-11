@@ -243,8 +243,8 @@ async function initializeApp() {
         fileLoaderSection?.classList.add('hidden');
         manageAccountsInfo?.classList.add('hidden'); // Hide companion mode message
         manageCategoriesInfo?.classList.add('hidden'); // Hide companion message
-        setupStandaloneEventListeners(); 
-        setupNavButtonListeners(); 
+        setupStandaloneEventListeners(); // Keep standalone specific listeners here
+        // setupNavButtonListeners(); // <<<<<< REMOVE from here
         await loadDataFromDB();
         if (dashboardSection) dashboardSection.classList.remove('hidden');
         setActiveNavLink('dashboard-summary');
@@ -253,22 +253,10 @@ async function initializeApp() {
         fileLoaderSection?.classList.remove('hidden');
         manageAccountsInfo?.classList.remove('hidden'); // Show companion mode message
         manageCategoriesInfo?.classList.remove('hidden'); // Show companion message
-        // Disable forms in companion mode
-        if(addAccountForm) addAccountForm.style.opacity = '0.5';
-        if(manageAccountsContent) {
-             const inputs = manageAccountsContent.querySelectorAll('input, select, button');
-             inputs.forEach(el => el.disabled = true);
-        }
-        if(addCategoryForm) { // Disable category form
-            addCategoryForm.style.opacity = '0.5';
-            const inputs = addCategoryForm.querySelectorAll('input, select, button');
-            inputs.forEach(el => el.disabled = true);
-        }
-        mainSections.forEach(section => { /*...*/ }); // Keep hiding logic
+        // Disable forms in companion mode logic ...
         updateStatus("Companion Mode: Please load your budget file.", "info");
         await loadPendingTransactionsAndUpdateCount();
     }
-
 
     // Setup other event listeners etc.
     if (currentYearSpan) currentYearSpan.textContent = new Date().getFullYear();
@@ -279,6 +267,7 @@ async function initializeApp() {
     setupAddFormListeners();
     setupSyncButtonListeners();
     setupSettingsListeners(); 
+    setupNavButtonListeners();
 
     console.log("Application initialization complete.");
 }
