@@ -1169,12 +1169,24 @@ async function processBudgetData(data, mode) {
 
         // --- Populate Static UI elements ---
         populateAccountFilter(data.accounts, [filterAccountSelect, txAccountSelect]);
-        populateCategoryFilter(/*...*/);
+        populateCategoryFilter(
+            data.categories || [],
+            allTransactionsForDisplay, // Use the combined list for finding all categories
+            [filterCategorySelect, txCategorySelect], // Pass the actual select elements
+            data.category_groups || {},
+            mode // Pass the current mode
+        );
         displayExistingAccounts(data.accounts);
         if(mode === 'standalone') {
-            populateCategoryGroupDropdown(data.category_groups, data.categories);
+            populateCategoryGroupDropdown(
+                data.category_groups || {},
+                data.categories || []
+            );
             displayExistingCategories(data.categories, data.category_groups);
-        } else { /* Clear/disable category mgmt UI */ }
+        } else { /* Clear/disable category mgmt UI */ 
+            if (existingCategoriesListDiv) existingCategoriesListDiv.innerHTML = '<p>Category management is for Standalone Mode.</p>';
+            if (newCategoryGroupSelect) newCategoryGroupSelect.innerHTML = '<option value="">N/A</option>';
+            }
 
         // --- Display Dashboard (uses latest calculated month usually) ---
         let dashboardSummaryMonth = latestDataMonth || 'N/A';
