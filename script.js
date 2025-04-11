@@ -1203,7 +1203,6 @@ async function processBudgetData(data, mode) {
 
         // --- Final UI State ---
         if (fileLoaderSection && mode === 'companion') fileLoaderSection.classList.add('hidden');
-        if (dashboardSection) dashboardSection.classList.remove('hidden');
         updateStatus(`Data processed for ${mode} mode. Displaying ${initialDisplayMonth}.`, "success");
 
     } catch (uiError) {
