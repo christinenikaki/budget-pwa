@@ -954,38 +954,40 @@ function updateBudgetAmountInDB(period, categoryName, newAmount) {
 }
 
 /**
- * Processes budget data and updates the UI.
- * Behavior depends on the mode.
- * @param {object} data The budget data object (from file or DB).
- * @param {string} mode The current application mode ('companion' or 'standalone').
+ * Processes budget data loaded from IndexedDB and updates the UI (Standalone Mode Only).
+ * @param {object | null} data The budget data object from the database, or null if no data/error.
  */
-async function processBudgetData(data, mode) {
-    console.log(`Processing budget data in ${mode} mode...`);
+async function processBudgetData(data) { // Removed 'mode' parameter
+    console.log("Processing budget data (Standalone Mode)...");
+
     // --- Reset month state on new data load ---
     currentBudgetMonth = null;
     currentChartMonth = null;
     earliestDataMonth = null;
     latestDataMonth = null;
+
+    // --- Handle No Data Case ---
     if (!data) {
-        console.warn("processBudgetData called with null data.");
-        // Display default "no data" state
-         clearDataDisplay();
-         const defaultPeriod = getCurrentRealMonth();
-         updateBudgetView(defaultPeriod); // Show empty state for current month
-         updateChartView(defaultPeriod); // Show empty state for current month
-          // Reset other displays
-         displayRTA(0);
-         displayAccountBalances({});
-         displayDashboardSummary({ latestMonth: 'N/A', income: 0, spending: 0 });
-         displayTransactions([], []);
-         displayExistingAccounts({});
-         displayExistingCategories([], {});
-         renderBudgetTable([], { budgeted: 0, spent: 0, available: 0 }, 'N/A');
-         renderSpendingChart(null); // Will show 'no data' message
-        return;
+        console.warn("processBudgetData called with null data. Displaying empty state.");
+        clearDataDisplay(); // Clear all dynamic data displays
+        const defaultPeriod = getCurrentRealMonth();
+        updateBudgetView(defaultPeriod); // Show empty budget view for current month
+        updateChartView(defaultPeriod);  // Show empty chart view for current month
+        // Explicitly set other displays to empty/zero state
+        displayRTA(0);
+        displayAccountBalances({});
+        displayDashboardSummary({ latestMonth: 'N/A', income: 0, spending: 0 });
+        displayTransactions([]); // Display "No transactions found"
+        displayExistingAccounts({});
+        // Display empty category management UI
+        populateCategoryGroupDropdown({}, []);
+        displayExistingCategories([], {});
+        renderBudgetTable([], { budgeted: 0, spent: 0, available: 0 }, defaultPeriod); // Show empty table
+        renderSpendingChart(null); // Show 'no data' message in chart area
+        return; // Exit early
     }
 
-    // Ensure basic structure exists
+    // --- Ensure Basic Structure Exists (Defaults for missing data) ---
     data.accounts = data.accounts || {};
     data.categories = data.categories || [];
     data.transactions = data.transactions || [];
@@ -993,69 +995,74 @@ async function processBudgetData(data, mode) {
     data.category_groups = data.category_groups || {};
     data.ready_to_assign = data.ready_to_assign || 0.0;
 
-    let allTransactionsForDisplay = [];
+    // --- Store Loaded Data Locally (Standalone) ---
+    localBudgetData = JSON.parse(JSON.stringify(data)); // Deep copy for safety
+
+    // --- Standalone Transactions ---
+    // Use transactions directly from the loaded data
+    const transactionsToUse = data.transactions || [];
 
     try {
-        localBudgetData = JSON.parse(JSON.stringify(data)); // Store loaded data
-        allTransactionsForDisplay = data.transactions || [];
-        // --- Determine date range ---
-        earliestDataMonth = findEarliestMonth(allTransactionsForDisplay);
-        latestDataMonth = findLatestMonth(allTransactionsForDisplay);
-        const initialDisplayMonth = latestDataMonth || getCurrentRealMonth(); // Show latest data month or current real month
+        // --- Determine Date Range (using standalone transactions) ---
+        earliestDataMonth = findEarliestMonth(transactionsToUse);
+        latestDataMonth = findLatestMonth(transactionsToUse);
+        const initialDisplayMonth = latestDataMonth || getCurrentRealMonth();
         // ---
 
-        // --- Populate Static UI elements ---
+        // --- Populate Static UI elements (Standalone Mode) ---
         populateAccountFilter(data.accounts, [filterAccountSelect, txAccountSelect]);
         populateCategoryFilter(
             data.categories || [],
-            allTransactionsForDisplay, // Use the combined list for finding all categories
-            [filterCategorySelect, txCategorySelect], // Pass the actual select elements
-            data.category_groups || {},
-            mode // Pass the current mode
+            transactionsToUse, // Use standalone transactions
+            [filterCategorySelect, txCategorySelect],
+            data.category_groups || {}
+            // Removed 'mode' argument
         );
         displayExistingAccounts(data.accounts);
-        if(mode === 'standalone') {
-            populateCategoryGroupDropdown(
-                data.category_groups || {},
-                data.categories || []
-            );
-            displayExistingCategories(data.categories, data.category_groups);
-        } else { /* Clear/disable category mgmt UI */ 
-            if (existingCategoriesListDiv) existingCategoriesListDiv.innerHTML = '<p>Category management is for Standalone Mode.</p>';
-            if (newCategoryGroupSelect) newCategoryGroupSelect.innerHTML = '<option value="">N/A</option>';
-            }
+        // Always show category management UI in standalone
+        populateCategoryGroupDropdown(data.category_groups || {}, data.categories || []);
+        displayExistingCategories(data.categories, data.category_groups || {});
+        // ---
 
-        // --- Display Dashboard (uses latest calculated month usually) ---
+        // --- Display Dashboard (using standalone transactions) ---
         let dashboardSummaryMonth = latestDataMonth || 'N/A';
         let monthSummary = { latestMonth: dashboardSummaryMonth, income: 0, spending: 0 };
         if (latestDataMonth) {
             monthSummary = {
                 latestMonth: dashboardSummaryMonth,
-                ...calculatePeriodSummary(dashboardSummaryMonth, allTransactionsForDisplay)
+                ...calculatePeriodSummary(dashboardSummaryMonth, transactionsToUse) // Use standalone transactions
             };
         }
         displayDashboardSummary(monthSummary);
         displayAccountBalances(data.accounts);
         displayRTA(data.ready_to_assign);
+        // ---
 
-        resetAllFilters();
+        // --- Display Transactions List (using standalone transactions) ---
+        displayTransactions(transactionsToUse); // Use standalone transactions (single argument)
+        resetAllFilters(); // Reset filters after displaying
+        // ---
 
         // --- Update Views for Initial Month ---
         updateBudgetView(initialDisplayMonth);
         updateChartView(initialDisplayMonth);
         // ---
 
-        // --- Final UI State ---
-        updateStatus(`Data processed for ${mode} mode. Displaying ${initialDisplayMonth}.`, "success");
+        // --- Final UI Status Update ---
+        updateStatus(`Data processed. Displaying ${initialDisplayMonth}.`, "success"); // Simplified status
 
     } catch (uiError) {
-        console.error("Error updating UI:", uiError);
+        console.error("Error updating UI after processing data:", uiError);
         updateStatus(`Error displaying data: ${uiError.message}`, "error");
-        // Clear display in case of partial failure
-         clearDataDisplay();
+        // Clear display in case of partial failure during UI updates
+        clearDataDisplay();
+        // Show empty views for consistency
+        const defaultPeriod = getCurrentRealMonth();
+        updateBudgetView(defaultPeriod);
+        updateChartView(defaultPeriod);
+        // You might want to leave a more specific error message here if needed.
     }
 }
-
 // --- Budget Calculation Helper Functions ---
 
 /**
@@ -1806,63 +1813,62 @@ function displayRTA(rta = 0.0) {
 }
 
 /**
- * Displays transactions in the table.
- * In Standalone mode, shows all transactions from the main store.
- * @param {Array} originalTransactions Original transactions (Companion mode only).
- * @param {Array} displayTransactions Transactions to display (Pending in Companion, All in Standalone).
+ * Displays transactions from the standalone database in the table.
+ * @param {Array<object>} transactions The array of transaction objects loaded from the database.
  */
-function displayTransactions(originalTransactions = [], displayTransactions = []) {
-    if (!transactionsTbody) return;
-    transactionsTbody.innerHTML = '';
+function displayTransactions(transactions = []) {
+    if (!transactionsTbody) {
+        console.error("Transaction table body not found.");
+        return;
+    }
+    transactionsTbody.innerHTML = ''; // Clear previous rows
 
-    let combinedForSort = [];
-    
-    // In standalone, all transactions are from the main store, none are "pending" in the same way
-    combinedForSort = displayTransactions.map(tx => ({
-        ...tx,
-        db_id: tx.id // This 'id' comes from the main transaction store's keyPath
-    }));
-    
-
-    if (combinedForSort.length === 0) {
-        transactionsTbody.innerHTML = `<tr><td colspan="7">No transactions found.</td></tr>`;
+    if (!Array.isArray(transactions) || transactions.length === 0) {
+        transactionsTbody.innerHTML = `<tr><td colspan="7">No transactions found.</td></tr>`; // Use colspan 7
         if (noResultsMessage) noResultsMessage.classList.add('hidden');
         return;
     }
 
-     const sortedTransactions = combinedForSort.sort((a, b) => {
-         const dateA = a.date || '0000-00-00';
-         const dateB = b.date || '0000-00-00';
-         if (dateB !== dateA) return dateB.localeCompare(dateA); // Sort by date descending
-         // Secondary sort: maybe by ID or timestamp if available?
-         const idA = a.id || 0;
-         const idB = b.id || 0;
-         // Simple numeric sort works fine here if IDs are numbers or null/0
-         if (typeof idA === 'number' && typeof idB === 'number') {
-            return idB - idA;
-        }
-        // Fallback sort if IDs aren't numbers (less likely but safe)
-        return String(idB).localeCompare(String(idA));
-     });
+    // Prepare transactions: Ensure each has a db_id (which is just the tx.id from the main store)
+    // No need for an isPending flag anymore.
+    const preparedTransactions = transactions.map(tx => ({
+        ...tx,
+        db_id: tx.id // The 'id' property from the transaction store IS the database ID.
+    }));
 
+    // Sort transactions (same logic as before)
+    const sortedTransactions = preparedTransactions.sort((a, b) => {
+        const dateA = a.date || '0000-00-00';
+        const dateB = b.date || '0000-00-00';
+        if (dateB !== dateA) return dateB.localeCompare(dateA); // Sort by date descending
+        // Secondary sort by ID (db_id) descending
+        const idA = a.db_id || 0;
+        const idB = b.db_id || 0;
+        if (typeof idA === 'number' && typeof idB === 'number') {
+           return idB - idA;
+       }
+       return String(idB).localeCompare(String(idA)); // Fallback string sort
+    });
+
+    // Loop through sorted transactions
     sortedTransactions.forEach(tx => {
         const row = transactionsTbody.insertRow();
-        const transactionDbId = tx.db_id;
+        const transactionDbId = tx.db_id; // Get the DB ID
 
-        // Store data attributes
+        // Store data attributes (same as before)
         const txDate = tx.date || '';
         let txAccount = ''; let displayAccount = 'N/A';
         const txType = tx.type || 'unknown';
-        if (txType === 'transfer') { /* Handle transfer display */ }
+        if (txType === 'transfer') { /* Handle transfer display if needed */ }
         else { txAccount = tx.account || ''; displayAccount = txAccount; }
         const txCategory = tx.category || (txType === 'transfer' ? '' : UNCATEGORIZED);
         const txPayee = tx.payee || (txType === 'transfer' ? 'Transfer' : '');
         const txMemo = tx.memo || '';
         row.dataset.date = txDate; row.dataset.account = txAccount; row.dataset.category = txCategory;
         row.dataset.payee = txPayee; row.dataset.memo = txMemo;
-        row.dataset.dbId = transactionDbId;
+        row.dataset.dbId = transactionDbId; // Store the DB ID
 
-        // Populate Cells (with icon)
+        // Populate Cells (same icon, account, payee, category, amount logic)
         const cellIcon = row.insertCell(0); cellIcon.classList.add('td-icon');
         const icon = document.createElement('i'); icon.classList.add('fa-solid');
         let iconClass = 'fa-question-circle'; let iconTitle = txType.charAt(0).toUpperCase() + txType.slice(1); let iconColor = '#6c757d';
@@ -1875,8 +1881,9 @@ function displayTransactions(originalTransactions = [], displayTransactions = []
         icon.classList.add(iconClass); icon.style.color = iconColor; icon.title = iconTitle;
         icon.setAttribute('aria-label', iconTitle); cellIcon.appendChild(icon);
 
+        // --- Date cell (no pending marker needed) ---
         const cellDate = row.insertCell(1); cellDate.textContent = txDate || 'N/A';
-        
+
         const cellAccount = row.insertCell(2); cellAccount.textContent = displayAccount; if (txType === 'transfer') cellAccount.style.fontStyle = 'italic';
         const cellPayee = row.insertCell(3); cellPayee.textContent = txPayee || txMemo || 'N/A';
         const cellCategory = row.insertCell(4); cellCategory.textContent = txCategory || '-';
@@ -1885,40 +1892,44 @@ function displayTransactions(originalTransactions = [], displayTransactions = []
         switch(txType) { /* Set currency class based on type */
              case 'income': cellAmount.classList.add('positive-currency'); break;
              case 'expense': cellAmount.classList.add('negative-currency'); break;
-             case 'refund': cellAmount.classList.add('positive-currency'); break; // Refund increases available cash
+             case 'refund': cellAmount.classList.add('positive-currency'); break;
              case 'transfer': cellAmount.classList.add('zero-currency'); break;
              default: cellAmount.classList.add('zero-currency');
          }
-         // --- DELETE BUTTON CELL ---
+
+        // --- DELETE BUTTON CELL (Simplified Condition) ---
         const cellAction = row.insertCell(6);
         cellAction.classList.add('td-action');
-        // Create the delete button ONLY if it's a valid transaction (has an ID)
-        // and if it's either a Pending transaction (Companion) or any transaction (Standalone)
-        // Don't allow deleting original/synced transactions in Companion mode visually.
-        // *** Check transactionDbId is not null ***
-        if (transactionDbId !== null && (currentMode === 'standalone')) {
+
+        // Create the delete button if the transaction has a valid database ID.
+        if (transactionDbId !== null && transactionDbId !== undefined) {
             const deleteButton = document.createElement('button');
             deleteButton.classList.add('delete-tx-button');
             deleteButton.setAttribute('aria-label', 'Delete Transaction');
             deleteButton.title = 'Delete Transaction';
-            deleteButton.dataset.txId = transactionDbId; // Use the DB ID as the key
-            
+            // --- Use the db_id (which IS the transaction ID from the store) ---
+            deleteButton.dataset.txId = transactionDbId;
+            // --- No need for txIsPending dataset attribute ---
+
             const deleteIcon = document.createElement('i');
             deleteIcon.classList.add('fa-solid', 'fa-trash-can');
             deleteButton.appendChild(deleteIcon);
 
-            // Add event listener
+            // Add event listener (same as before)
             deleteButton.addEventListener('click', handleDeleteTransactionClick);
 
             cellAction.appendChild(deleteButton);
-        } else {
-            // Leave empty for non-deletable rows
         }
         // --- END OF DELETE BUTTON CELL ---
 
     });
 
-    if (noResultsMessage) noResultsMessage.classList.add('hidden');
+    // Hide or show the 'no results' message (used by filtering)
+    if (noResultsMessage) {
+        // Check if the *only* row is the "No transactions found" message
+        const isEffectivelyEmpty = transactionsTbody.rows.length === 1 && transactionsTbody.rows[0].cells.length === 1 && transactionsTbody.rows[0].cells[0].textContent.includes("No transactions");
+        noResultsMessage.classList.toggle('hidden', !isEffectivelyEmpty); // Show if it's not empty, hide otherwise
+    }
 }
 
 /**
@@ -1981,55 +1992,69 @@ function populateCategoryFilter(categories = [], transactions = [], selectElemen
         });
     });
 }
-// --- Transaction Deletion Handler ---
+
+/**
+ * Handles the click event for the delete transaction button.
+ * Calls the function to delete the transaction from the database and update balances/RTA.
+ * @param {Event} event The button click event.
+ */
 async function handleDeleteTransactionClick(event) {
     const button = event.currentTarget;
-    const transactionId = button.dataset.txId;
+    const transactionIdStr = button.dataset.txId; // Get ID from button's data attribute
 
-    // Ensure we have an ID (should always be the case if button exists)
-    if (!transactionId) {
-        console.error("Delete button clicked but no transaction ID found.");
+    // --- Validate Transaction ID ---
+    if (!transactionIdStr) {
+        console.error("Delete button clicked but no transaction ID found in dataset.");
         updateStatus("Error: Could not identify transaction to delete.", "error");
+        return;
+    }
+
+    // Parse the ID (assuming it's a number from auto-increment)
+    const transactionId = parseInt(transactionIdStr, 10);
+    if (isNaN(transactionId)) {
+        console.error(`Invalid transaction ID format: "${transactionIdStr}"`);
+        updateStatus("Error: Invalid transaction identifier.", "error");
         return;
     }
 
     // --- Confirmation ---
     if (!confirm(`Are you sure you want to delete this transaction? This action cannot be undone.`)) {
+        console.log("Transaction deletion cancelled by user.");
         return; // User cancelled
     }
 
-    // Disable button to prevent double clicks
+    // --- Visual Feedback: Disable button and show spinner ---
     button.disabled = true;
     const icon = button.querySelector('i');
-    if (icon) icon.classList.replace('fa-trash-can', 'fa-spinner'); icon.classList.add('fa-spin'); // Show loading spinner
+    if (icon) {
+        icon.classList.replace('fa-trash-can', 'fa-spinner');
+        icon.classList.add('fa-spin');
+    } else {
+        button.textContent = 'Deleting...'; // Fallback text if no icon
+    }
 
+    // --- Attempt Deletion ---
     try {
-        let success = false;
-        if (currentMode === 'standalone') {
-            // Standalone: Delete from main store, adjust balances/RTA
-            console.log(`Attempting to delete standalone transaction ID: ${transactionId}`);
-            // Need to parse the ID back to a number if it's auto-incremented
-            await deleteTransactionStandalone(parseInt(transactionId, 10));
-            success = true;
-            // UI update is handled by loadDataFromDB called within deleteTransactionStandalone
+        console.log(`Attempting to delete standalone transaction ID: ${transactionId}`);
 
-        } else { // Companion Mode
-        }
-
-        if (success) {
-            updateStatus("Transaction deleted successfully.", "success");
-        }
+        // Call the function that handles DB deletion, balance/RTA adjustments, and data reload
+        await deleteTransactionStandalone(transactionId);
 
     } catch (error) {
+        // Handle errors specifically from the deletion process
         console.error("Failed to delete transaction:", error);
         updateStatus(`Error deleting transaction: ${error}`, "error");
-        // Re-enable button on error
-        button.disabled = false;
-         if (icon) icon.classList.replace('fa-spinner', 'fa-trash-can'); icon.classList.remove('fa-spin');
-    }
-    // No finally needed as button is either removed on success or re-enabled on error
-}
 
+        // Re-enable the button and restore icon on error
+        button.disabled = false;
+        if (icon) {
+            icon.classList.replace('fa-spinner', 'fa-trash-can');
+            icon.classList.remove('fa-spin');
+        } else {
+            button.textContent = 'Delete'; // Restore fallback text
+        }
+    }
+}
 // --- Standalone Mode DB Functions ---
 
 /** Loads all budget data from IndexedDB stores (Standalone Mode). */
@@ -2207,6 +2232,32 @@ async function saveTransactionStandalone(transaction) {
             reject("Transaction failed.");
         };
     });
+}
+
+/**
+ * Sets up the Sync/Export section UI for Standalone Mode.
+ * Ensures only standalone-related content is visible.
+ * (This function might become redundant if the initial HTML is already correct,
+ * but it's good practice to ensure the state is set explicitly).
+ */
+function updateSyncSectionUI() {
+    // Check if elements exist before manipulating them
+    if (!syncSection || !syncSectionTitle || !syncCompanionContent || !syncStandaloneContent) {
+        console.warn("One or more Sync section elements not found. Cannot update UI.");
+        return;
+    }
+
+    // --- Set Title for Standalone Mode ---
+    // Consider making this static in the HTML later if preferred
+    syncSectionTitle.textContent = "Export / Import Data"; // Or "Backup / Restore Data"
+
+    // --- Ensure Correct Visibility ---
+    // Hide the companion-specific div (if it hasn't been removed from HTML yet)
+    syncCompanionContent.classList.add('hidden');
+    // Show the standalone-specific div
+    syncStandaloneContent.classList.remove('hidden');
+
+    console.log("Sync section UI updated for Standalone Mode.");
 }
 
 /** Exports all data from IndexedDB (Standalone Mode) - PLACEHOLDER */
@@ -2976,53 +3027,59 @@ function saveCategoryAndGroup(categoryData) {
     });
 }
 
-/** Handles the submission of the new transaction form. Behavior depends on mode. */
+/**
+ * Handles the submission of the new transaction form in Standalone Mode.
+ * Saves the transaction directly to the database and triggers a data reload.
+ */
 async function handleAddTransaction(event) {
-    event.preventDefault();
-    if (!addTxStatusDiv) return;
+    event.preventDefault(); // Prevent default form submission behavior
+    if (!addTxStatusDiv) {
+        console.error("Add transaction status display element not found.");
+        return; // Exit if status element is missing
+    }
+
+    // --- Initial Status Update ---
     addTxStatusDiv.textContent = "Adding...";
     addTxStatusDiv.className = 'status-info';
 
-    // Basic validation
+    // --- Form Validation ---
     if (!txDateInput.value || !txAccountSelect.value || !txCategorySelect.value || !txAmountInput.value) {
-        addTxStatusDiv.textContent = "Error: Please fill all required fields.";
+        addTxStatusDiv.textContent = "Error: Please fill all required fields (Date, Account, Category, Amount).";
         addTxStatusDiv.className = 'status-error';
         return;
     }
     const amount = parseFloat(txAmountInput.value);
-     if (isNaN(amount) || amount <= 0) {
-        addTxStatusDiv.textContent = "Error: Invalid amount.";
+    if (isNaN(amount) || amount <= 0) {
+        addTxStatusDiv.textContent = "Error: Amount must be a positive number.";
         addTxStatusDiv.className = 'status-error';
         return;
     }
 
+    // --- Create Transaction Object ---
     const newTx = {
         type: txTypeSelect.value,
         date: txDateInput.value,
         account: txAccountSelect.value,
-        payee: txPayeeInput.value.trim() || `(${txTypeSelect.value})`,
+        // Use payee input, fallback to a generic description based on type if empty
+        payee: txPayeeInput.value.trim() || `(${txTypeSelect.options[txTypeSelect.selectedIndex].text})`,
         category: txCategorySelect.value,
         amount: amount,
         memo: txMemoInput.value.trim(),
-        // id, status, entry_timestamp added by saving functions
+        // The ID will be generated by IndexedDB (autoIncrement)
+        // entry_timestamp will be added within saveTransactionStandalone
     };
 
+    // --- Attempt to Save (Standalone Logic Only) ---
     try {
-        if (currentMode === 'standalone') {
-            // Save directly to main store and update state
-            await saveTransactionStandalone(newTx);
-            // UI update happens inside saveTransactionStandalone via loadDataFromDB callback
-            // No need to manually call displayTransactions here if loadDataFromDB handles it
-        } else { // Companion Mode
-        }
-
+        await saveTransactionStandalone(newTx);
     } catch (error) {
+        // Handle errors specifically from the save process
         console.error("Failed to add transaction:", error);
-        addTxStatusDiv.textContent = `Error: ${error}`;
+        addTxStatusDiv.textContent = `Error saving transaction: ${error}`; // Provide specific error
         addTxStatusDiv.className = 'status-error';
+        // Keep the form populated in case of error so the user can correct it.
     }
 }
-
 /** Generates a Version 4 UUID string. */
 function generateUUID() { /* ... keep existing UUID function ... */
     if (self.crypto && self.crypto.randomUUID) {
