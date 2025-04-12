@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <!-- Responsive viewport tag -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Changed Title slightly to reflect standalone focus -->
-    <title>Zero Budget (Standalone)</title>
+    <title>Zero Budget</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <!-- Link to your CSS file -->
@@ -19,50 +18,56 @@
         <button id="menu-toggle" class="menu-button" aria-label="Open Menu">
             <i class="fa-solid fa-bars"></i> <!-- Font Awesome Bars Icon -->
         </button>
-        <!-- Simple Title -->
         <h1>My Budget</h1>
     </header>
     <nav id="side-menu" class="side-menu">
         <button id="menu-close" class="menu-close-button" aria-label="Close Menu">×</button>
         <ul>
-            <!-- Navigation links remain the same, functionality now purely standalone -->
             <li><a href="#dashboard-summary" class="nav-link" data-section="dashboard-summary">Dashboard</a></li>
             <li><a href="#budget-view" class="nav-link" data-section="budget-view">Budget </a></li>
             <li><a href="#charts-section" class="nav-link" data-section="charts-section">Charts</a></li>
             <li><a href="#add-expense-form" class="nav-link" data-section="add-expense-form">Add Entry</a></li>
             <li><a href="#transactions-list" class="nav-link" data-section="transactions-list">Transactions</a></li>
-            <li><a href="#manage-accounts-section" class="nav-link" data-section="manage-accounts-section">Manage Accounts</a></li>
+            <li><a href="#manage-accounts-section" class="nav-link" data-section="manage-accounts-section">Manage Accounts</a></li> 
             <li><a href="#manage-categories-section" class="nav-link" data-section="manage-categories-section">Manage Categories</a></li>
-            <!-- Renamed Sync Data to reflect standalone purpose -->
-            <li><a href="#sync-section" class="nav-link" data-section="sync-section">Export / Import</a></li>
-            <li><a href="#settings-section" class="nav-link" data-section="settings-section">Settings</a></li>
+            <li><a href="#sync-section" class="nav-link" data-section="sync-section">Import/Export Data</a></li>
+            <!-- <li><a href="#settings-section" class="nav-link" data-section="settings-section">Settings</a></li> -->
         </ul>
     </nav>
     <div id="overlay" class="overlay"></div>
     <main class="container">
-
-        <!-- === REMOVED: File Loader Section ===
         <section id="file-loader" class="card">
             <h2>Load Budget Data</h2>
             <p>Select your <code>budget_data.json</code> file:</p>
+            <!-- File input -->
             <input type="file" id="jsonFileInput" accept=".json">
-            <div id="load-status">Please select your budget file.</div>
+            <div id="load-status">Please select your budget file.</div> 
         </section>
-        -->
 
-        <!-- === SETTINGS SECTION (Simplified) === -->
+        <!-- === SETTINGS SECTION === -->
         <section id="settings-section" class="main-section hidden card">
             <h2>Settings</h2>
-            <!-- Removed the Application Mode selection -->
-            <p>Application settings will go here.</p>
-            <!-- Placeholder for future settings -->
-            <div id="settings-status" style="margin-top: 15px;"></div>
+            <div class="form-group">
+                <h3>Application Mode</h3>
+                <p>Choose how the app should operate:</p>
+                <label style="margin-right: 15px; display: inline-block;">
+                    <input type="radio" name="appMode" value="companion" id="mode-companion-radio" checked> Companion Mode
+                </label>
+                <label style="display: inline-block;">
+                    <input type="radio" name="appMode" value="standalone" id="mode-standalone-radio"> Standalone Mode
+                </label>
+                <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
+                    <em>Companion Mode:</em> Load data from an external JSON file. New entries are saved locally and need to be exported/synced manually.<br>
+                    <em>Standalone Mode:</em> All data (budget, transactions) is stored locally on this device. No file loading needed after initial setup (setup not yet implemented).
+                </p>
+                <div id="settings-status" style="margin-top: 15px;"></div>
+            </div>
+            <!-- Add other settings here later -->
         </section>
 
         <!-- === MANAGE ACCOUNTS SECTION (Standalone Mode) === -->
         <section id="manage-accounts-section" class="main-section hidden card">
-            <!-- Title reflects it's the standard way now -->
-            <h2>Manage Accounts</h2>
+            <h2>Manage Accounts (Standalone Mode)</h2>
 
             <div id="manage-accounts-content"> <!-- Wrapper div -->
                 <p>Add new accounts and set their starting balances.</p>
@@ -100,70 +105,73 @@
                 <hr style="margin: 20px 0;">
 
                 <h3>Existing Accounts</h3>
-                <p>Current balances based on stored data.</p>
+                <p>Balances shown here reflect the initial setup or last calculated state. They don't update in real-time as transactions are added on this screen.</p>
                 <ul id="existing-accounts-list" class="summary-list" style="margin-top: 10px;">
-                    <li>Loading accounts...</li> <!-- Updated placeholder -->
+                    <li>No accounts added yet.</li> <!-- Placeholder -->
                 </ul>
-                <!-- REMOVED: Companion-specific info div #manage-accounts-info -->
+                <div id="manage-accounts-info" style="font-size: 0.9em; color: #666; margin-top: 15px;">
+                    This feature is primarily for Standalone mode.
+                </div>
             </div>
         </section>
 
         <!-- === MANAGE CATEGORIES SECTION (Standalone Mode) === -->
-        <section id="manage-categories-section" class="main-section hidden card">
-             <!-- Title reflects it's the standard way now -->
-            <h2>Manage Categories</h2>
+    <section id="manage-categories-section" class="main-section hidden card">
+        <h2>Manage Categories (Standalone Mode)</h2>
 
-            <div id="manage-categories-content"> <!-- Wrapper div -->
-                <p>Add new categories and assign them to groups.</p>
+        <div id="manage-categories-content"> <!-- Wrapper div -->
+            <p>Add new categories and assign them to groups.</p>
 
-                <form id="add-category-form" style="margin-bottom: 30px;">
-                    <h3>Add New Category</h3>
-                    <div class="filter-grid"> <!-- Reuse grid for layout -->
-                        <div class="form-group">
-                            <label for="new-category-name">Category Name:</label>
-                            <input type="text" id="new-category-name" placeholder="e.g., Groceries, Rent" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="new-category-group">Category Group:</label>
-                            <select id="new-category-group" required>
-                                <option value="">-- Select Group --</option>
-                                <!-- Options populated by JS -->
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <button type="submit" class="button">Add Category</button>
-                        </div>
+            <form id="add-category-form" style="margin-bottom: 30px;">
+                <h3>Add New Category</h3>
+                <div class="filter-grid"> <!-- Reuse grid for layout -->
+                    <div class="form-group">
+                        <label for="new-category-name">Category Name:</label>
+                        <input type="text" id="new-category-name" placeholder="e.g., Groceries, Rent" required>
                     </div>
-                    <div id="add-category-status" style="margin-top: 10px;"></div>
-                </form>
-
-                <hr style="margin: 20px 0;">
-
-                <h3>Existing Categories by Group</h3>
-                <div id="existing-categories-list">
-                    <p>Loading categories...</p> <!-- Updated placeholder -->
+                    <div class="form-group">
+                        <label for="new-category-group">Category Group:</label>
+                        <select id="new-category-group" required>
+                            <option value="">-- Select Group --</option>
+                            <!-- Options populated by JS -->
+                            <!-- Consider adding a "Create New Group..." option later -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <button type="submit" class="button">Add Category</button>
+                    </div>
                 </div>
-                <!-- REMOVED: Companion-specific info div #manage-categories-info -->
-            </div>
-        </section>
+                <div id="add-category-status" style="margin-top: 10px;"></div>
+            </form>
 
-        <!-- === DASHBOARD SECTION === -->
+            <hr style="margin: 20px 0;">
+
+            <h3>Existing Categories by Group</h3>
+            <div id="existing-categories-list">
+                <p>No categories added yet.</p> <!-- Placeholder -->
+            </div>
+             <div id="manage-categories-info" style="font-size: 0.9em; color: #666; margin-top: 15px;">
+                 This feature is primarily for Standalone mode. Category groups help organize your budget.
+             </div>
+        </div>
+    </section>
+
         <section id="dashboard-summary" class="main-section hidden">
             <h2>Dashboard <span id="summary-month-display" style="font-size: 0.8em; color: #666;"></span></h2>
 
-            <div class="summary-grid">
+            <div class="summary-grid"> 
                 <div id="ready-to-assign" class="summary-box">
                     <h3>Ready to Assign</h3>
                     <p id="rta-value" class="summary-value">Loading...</p>
                 </div>
-
+       
                 <div id="account-balances" class="summary-box">
                     <h3>Account Balances</h3>
                     <ul id="balances-list" class="summary-list">
                         <li>Loading...</li>
                     </ul>
                 </div>
-
+       
                 <div id="month-summary" class="summary-box">
                      <h3>Latest Month Summary</h3>
                      <p><strong class="summary-label">Month:</strong> <span id="summary-month">--</span></p>
@@ -172,29 +180,27 @@
                 </div>
             </div>
         </section>
-
         <!-- === CHART SECTION === -->
         <section id="charts-section" class="main-section hidden">
-            <h2 class="view-header-nav">
+            <h2 class="view-header-nav"> <!-- Add class for potential styling -->
                 <button id="chart-prev-month" class="button button-small nav-button" aria-label="Previous month chart">< Prev</button>
                 <span>Spending Breakdown (<span id="chart-month-display">--</span>)</span>
                 <button id="chart-next-month" class="button button-small nav-button" aria-label="Next month chart">Next ></button>
            </h2>
-            <!-- Title removed from here as it's incorporated above -->
+            <h2>Spending Breakdown (<span id="chart-month-display">--</span>)</h2>
             <div id="spending-chart-container" style="position: relative; height:60vh; width:80vw; max-width: 450px; margin: 15px auto;">
-                <canvas id="spendingPieChart"></canvas>
+                <canvas id="spendingPieChart"></canvas> <!-- Canvas element for Chart.js -->
             </div>
             <p id="chart-no-data" class="hidden" style="text-align: center; margin-top: 15px; font-style: italic;">No positive spending data available for this period to generate chart.</p>
         </section>
-
         <!-- === BUDGET VIEW SECTION === -->
         <section id="budget-view" class="main-section hidden">
-            <h2 class="view-header-nav">
+            <h2 class="view-header-nav"> <!-- Add class for potential styling -->
                 <button id="budget-prev-month" class="button button-small nav-button" aria-label="Previous month budget">< Prev</button>
                 <span>Budget for <span id="budget-view-month">--</span></span>
                 <button id="budget-next-month" class="button button-small nav-button" aria-label="Next month budget">Next ></button>
             </h2>
-            <div id="budget-view-rta-container" class="summary-box" style="margin-bottom: 15px; text-align: center; background-color: #f0f9f0;">
+            <div id="budget-view-rta-container" class="summary-box" style="margin-bottom: 15px; text-align: center; background-color: #f0f9f0;"> <!-- Optional: Slightly different background -->
                 <h3>Ready to Assign</h3>
                 <p id="budget-view-rta-value" class="summary-value">Loading...</p>
            </div>
@@ -213,31 +219,22 @@
                         <!-- Budget rows populated by JS -->
                         <tr><td colspan="5">Loading budget data...</td></tr>
                     </tbody>
-                    <tfoot>
-                        <tr>
-                            <th>Totals</th>
-                            <td class="currency"></td> <!-- Prev Avail total not typically shown -->
-                            <td class="currency"><strong id="total-budgeted-value">--</strong></td>
-                            <td class="currency"><strong id="total-spent-value">--</strong></td>
-                            <td class="currency"><strong id="total-available-value">--</strong></td>
-                        </tr>
-                    </tfoot>
                 </table>
             </div>
              <p id="budget-no-data" class="hidden" style="text-align: center; margin-top: 15px; font-style: italic;">No budget data available for this period.</p>
         </section>
-
         <!-- === ADD NEW TRANSACTION SECTION === -->
-        <section id="add-expense-form" class="main-section hidden">
-            <h2>Add New Entry</h2> <!-- Changed title slightly -->
+        <section id="add-expense-form" class="main-section hidden"> <!-- Hide initially -->
+            <h2>Add New Expense/Income</h2>
             <form id="new-tx-form">
-                <div class="filter-grid">
+                <div class="filter-grid"> <!-- Reuse filter grid styling -->
                     <div class="form-group">
                         <label for="tx-type">Type:</label>
                         <select id="tx-type" required>
                             <option value="expense" selected>Expense</option>
                             <option value="income">Income</option>
                             <option value="refund">Refund</option>
+                            <!-- Add Transfer later if needed, more complex -->
                         </select>
                     </div>
                     <div class="form-group">
@@ -259,7 +256,7 @@
                         <label for="tx-category">Category:</label>
                         <select id="tx-category" required>
                              <option value="">-- Select Category --</option>
-                            <!-- Options populated by JS -->
+                            <!-- Options populated by JS, excluding Savings/Archived? -->
                         </select>
                     </div>
                     <div class="form-group">
@@ -277,25 +274,24 @@
             </form>
         </section>
 
-        <!-- === EXPORT/IMPORT SECTION (Standalone Only) === -->
-        <section id="sync-section" class="main-section hidden">
-            <!-- Updated Title to be static -->
-            <h2 id="sync-section-title">Export / Import Data</h2>
-
-             <!-- REMOVED: Companion Content Div
-             <div id="sync-companion-content"> ... </div>
-             -->
-
-             <!-- Standalone Content Div (No longer needs 'hidden' class) -->
-             <div id="sync-standalone-content">
-                <p>Export all locally stored data for backup or transfer purposes.</p>
+        <section id="sync-section" class="main-section hidden"> <!-- Hide initially -->
+            <h2 id="sync-section-title">Sync Data (Companion Mode)</h2> <!-- Title changes based on mode -->
+             <div id="sync-companion-content">
+                 <p>You have <strong id="pending-count">0</strong> unsynced transaction(s) entered on this device.</p>
+                 <p>Export the complete, updated data set to manually replace your main <code>budget_data.json</code> file.</p>
+                 <button id="export-data-button" class="button button-secondary" disabled>Export Updated Data File</button>
+                 <button id="clear-pending-button" class="button button-danger" disabled style="margin-left: 10px;">Clear Pending Entries</button>
+                 <div id="export-status" style="margin-top: 10px;"></div>
+             </div>
+             <div id="sync-standalone-content" class="hidden">
+                <p>Data is saved locally. You can export all data for backup purposes.</p>
                 <button id="export-standalone-button" class="button button-secondary">Export All Data</button>
                  <div id="export-standalone-status" style="margin-top: 10px;"></div>
                  <hr style="margin: 30px 0;"> <!-- Separator -->
 
                  <h3>Import Data (Replaces Existing)</h3>
                  <p style="color: #dc3545; font-weight: bold;">Warning: Importing will delete ALL current budget data (transactions, accounts, categories, budgets) on this device before loading the file.</p>
-                 <div class="form-group">
+                 <div class="form-group"> <!-- Reuse form-group for structure -->
                     <label for="import-standalone-file">Select Backup File (.json):</label>
                     <input type="file" id="import-standalone-file" accept=".json" style="display: block; margin-top: 5px;">
                  </div>
@@ -304,7 +300,6 @@
              </div>
         </section>
 
-        <!-- === TRANSACTIONS LIST SECTION === -->
         <section id="transactions-list" class="main-section hidden">
             <div class="filter-controls card">
                 <h3>Filter Transactions</h3>
@@ -346,18 +341,17 @@
                 <table id="transactions-table">
                     <thead>
                         <tr>
-                            <th class="th-icon"></th>
+                            <th class="th-icon"></th> <!--  narrow header for icon -->
                             <th>Date</th>
                             <th>Account</th>
                             <th>Payee</th>
                             <th>Category</th>
                             <th class="currency">Amount</th>
-                            <th class="th-action"></th>
+                            <th class="th-action"></th> 
                         </tr>
                     </thead>
                     <tbody id="transactions-tbody">
-                        <!-- Ensure initial state reflects loading -->
-                        <tr><td colspan="7">Loading transactions...</td></tr>
+                        <tr><td colspan="7">Please load data...</td></tr> <!-- Adjust colspan -->
                     </tbody>
                 </table>
             </div>

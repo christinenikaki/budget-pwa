@@ -254,6 +254,19 @@ header {
     margin-bottom: 10px; /* Space between paragraphs */
 }
 
+#sync-section strong#pending-count {
+    font-weight: bold;
+    /* Maybe add a background or different color */
+     /* background-color: #ffeeba;
+     padding: 2px 5px;
+     border-radius: 3px; */
+}
+
+/* Add spacing between the export/clear buttons */
+#sync-section #clear-pending-button {
+    margin-left: 10px;
+}
+
 /* Ensure status divs within the sections pick up general status styles */
 /* Add margin if needed */
 #add-tx-status,
@@ -506,6 +519,12 @@ footer {
 #budget-table tbody tr.budget-group-header + tr td {
      padding-top: 8px;
 }
+
+/* Ensure category name cell still looks okay */
+#budget-table tbody td:first-child {
+    /* padding-left: 10px; /* Optional indent for categories */
+}
+
 
 /* Style for savings goal rows */
 #budget-tbody tr.savings-goal-row td {
