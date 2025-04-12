@@ -31,43 +31,13 @@
             <li><a href="#manage-accounts-section" class="nav-link" data-section="manage-accounts-section">Manage Accounts</a></li> 
             <li><a href="#manage-categories-section" class="nav-link" data-section="manage-categories-section">Manage Categories</a></li>
             <li><a href="#sync-section" class="nav-link" data-section="sync-section">Sync Data</a></li>
-            <li><a href="#settings-section" class="nav-link" data-section="settings-section">Settings</a></li>
         </ul>
     </nav>
     <div id="overlay" class="overlay"></div>
     <main class="container">
-        <section id="file-loader" class="card">
-            <h2>Load Budget Data</h2>
-            <p>Select your <code>budget_data.json</code> file:</p>
-            <!-- File input -->
-            <input type="file" id="jsonFileInput" accept=".json">
-            <div id="load-status">Please select your budget file.</div> 
-        </section>
-
-        <!-- === SETTINGS SECTION === -->
-        <section id="settings-section" class="main-section hidden card">
-            <h2>Settings</h2>
-            <div class="form-group">
-                <h3>Application Mode</h3>
-                <p>Choose how the app should operate:</p>
-                <label style="margin-right: 15px; display: inline-block;">
-                    <input type="radio" name="appMode" value="companion" id="mode-companion-radio" checked> Companion Mode
-                </label>
-                <label style="display: inline-block;">
-                    <input type="radio" name="appMode" value="standalone" id="mode-standalone-radio"> Standalone Mode
-                </label>
-                <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
-                    <em>Companion Mode:</em> Load data from an external JSON file. New entries are saved locally and need to be exported/synced manually.<br>
-                    <em>Standalone Mode:</em> All data (budget, transactions) is stored locally on this device. No file loading needed after initial setup (setup not yet implemented).
-                </p>
-                <div id="settings-status" style="margin-top: 15px;"></div>
-            </div>
-            <!-- Add other settings here later -->
-        </section>
-
-        <!-- === MANAGE ACCOUNTS SECTION (Standalone Mode) === -->
+        <!-- === MANAGE ACCOUNTS SECTION === -->
         <section id="manage-accounts-section" class="main-section hidden card">
-            <h2>Manage Accounts (Standalone Mode)</h2>
+            <h2>Manage Accounts</h2>
 
             <div id="manage-accounts-content"> <!-- Wrapper div -->
                 <p>Add new accounts and set their starting balances.</p>
@@ -115,9 +85,9 @@
             </div>
         </section>
 
-        <!-- === MANAGE CATEGORIES SECTION (Standalone Mode) === -->
+        <!-- === MANAGE CATEGORIES SECTION === -->
     <section id="manage-categories-section" class="main-section hidden card">
-        <h2>Manage Categories (Standalone Mode)</h2>
+        <h2>Manage Categories</h2>
 
         <div id="manage-categories-content"> <!-- Wrapper div -->
             <p>Add new categories and assign them to groups.</p>
@@ -284,14 +254,7 @@
         </section>
 
         <section id="sync-section" class="main-section hidden"> <!-- Hide initially -->
-            <h2 id="sync-section-title">Sync Data (Companion Mode)</h2> <!-- Title changes based on mode -->
-             <div id="sync-companion-content">
-                 <p>You have <strong id="pending-count">0</strong> unsynced transaction(s) entered on this device.</p>
-                 <p>Export the complete, updated data set to manually replace your main <code>budget_data.json</code> file.</p>
-                 <button id="export-data-button" class="button button-secondary" disabled>Export Updated Data File</button>
-                 <button id="clear-pending-button" class="button button-danger" disabled style="margin-left: 10px;">Clear Pending Entries</button>
-                 <div id="export-status" style="margin-top: 10px;"></div>
-             </div>
+            <h2 id="sync-section-title">Export/Import Data</h2> 
              <div id="sync-standalone-content" class="hidden">
                 <p>In Standalone Mode, data is saved locally. You can export all data for backup purposes.</p>
                 <button id="export-standalone-button" class="button button-secondary">Export All Data</button>

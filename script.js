@@ -2,7 +2,6 @@
 console.log("Script loaded!");
 
 // --- DOM Element References ---
-const fileInput = document.getElementById('jsonFileInput');
 const loadStatusDiv = document.getElementById('load-status');
 const fileLoaderSection = document.getElementById('file-loader');
 const dashboardSection = document.getElementById('dashboard-summary');
@@ -37,12 +36,7 @@ const addTxStatusDiv = document.getElementById('add-tx-status');
 
 const syncSection = document.getElementById('sync-section');
 const syncSectionTitle = document.getElementById('sync-section-title');
-const syncCompanionContent = document.getElementById('sync-companion-content');
 const syncStandaloneContent = document.getElementById('sync-standalone-content');
-const pendingCountSpan = document.getElementById('pending-count');
-const exportDataButton = document.getElementById('export-data-button');
-const clearPendingButton = document.getElementById('clear-pending-button');
-const exportStatusDiv = document.getElementById('export-status');
 // --- Standalone Import/Export Elements ---
 const exportStandaloneButton = document.getElementById('export-standalone-button');
 const exportStandaloneStatusDiv = document.getElementById('export-standalone-status');
@@ -50,7 +44,6 @@ const importStandaloneFileInput = document.getElementById('import-standalone-fil
 const importStandaloneButton = document.getElementById('import-standalone-button');
 const importStandaloneStatusDiv = document.getElementById('import-standalone-status');
 
-let originalBudgetData = null; // Store the initially loaded data (Companion Mode)
 let localBudgetData = null; // Store data loaded/managed in Standalone Mode
 
 const budgetViewSection = document.getElementById('budget-view');
@@ -73,11 +66,6 @@ const sideMenu = document.getElementById('side-menu');
 const overlay = document.getElementById('overlay');
 const navLinks = document.querySelectorAll('.nav-link');
 const mainSections = document.querySelectorAll('.main-section'); // Get all sections
-// --- Settings Elements ---
-const settingsSection = document.getElementById('settings-section');
-const modeCompanionRadio = document.getElementById('mode-companion-radio');
-const modeStandaloneRadio = document.getElementById('mode-standalone-radio');
-const settingsStatusDiv = document.getElementById('settings-status');
 
 // --- Manage Accounts Elements ---
 const manageAccountsSection = document.getElementById('manage-accounts-section');
@@ -109,7 +97,6 @@ const chartNextMonthBtn = document.getElementById('chart-next-month');
 // --- Define Constants ---
 const DB_NAME = 'budgetAppDB';
 const DB_VERSION = 2; // <<<< INCREMENT DB VERSION <<<<
-const PENDING_TX_STORE_NAME = 'pendingTransactions'; // Only for Companion Mode ideally
 // --- IndexedDB Store Names for Standalone Mode ---
 const TX_STORE_NAME = 'transactions';
 const ACCOUNT_STORE_NAME = 'accounts';
@@ -124,7 +111,7 @@ const UNCATEGORIZED = "Uncategorized";
 const SAVINGS_GROUP_NAME = "Savings Goals";
 const ARCHIVED_GROUP_NAME = "Archived";
 
-let currentMode = 'companion'; // Default mode, will be updated on init
+let currentMode = 'standalone'; // Default mode, will be updated on init
 let currentBudgetMonth = null; // Stores "YYYY-MM" for the budget view
 let currentChartMonth = null;  // Stores "YYYY-MM" for the chart view
 let earliestDataMonth = null; // Stores "YYYY-MM" of the first transaction
@@ -166,16 +153,6 @@ function initDB() {
             console.log("IndexedDB upgrade needed...");
             let tempDb = event.target.result;
             const transaction = event.target.transaction; // Get transaction for upgrade
-
-            // --- Pending Store (Keep for Companion Mode) ---
-            if (!tempDb.objectStoreNames.contains(PENDING_TX_STORE_NAME)) {
-                console.log(`Creating object store: ${PENDING_TX_STORE_NAME}`);
-                const store = tempDb.createObjectStore(PENDING_TX_STORE_NAME, {
-                    keyPath: 'id', autoIncrement: true
-                });
-                store.createIndex('dateIndex', 'date', { unique: false });
-                console.log("Created pending store.");
-            }
 
             // --- Stores for Standalone Mode ---
             if (!tempDb.objectStoreNames.contains(TX_STORE_NAME)) {
@@ -231,57 +208,66 @@ function initDB() {
 
 // --- Application Initialization ---
 async function initializeApp() {
-    console.log("Initializing application...");
-    setAppModeUI(); // Set initial mode based on localStorage
-    await initDB().catch(error => { // Initialize DB first
+    console.log("Initializing application (Standalone Mode)...");
+
+    // 1. Initialize IndexedDB (Essential for Standalone)
+    await initDB().catch(error => {
         console.error("FATAL: Failed to initialize IndexedDB:", error);
-        updateStatus("Critical Error: Offline storage unavailable. App cannot function correctly.", "error");
-        // Potentially disable most UI elements here
+        // Use a general status element if available, otherwise log
+        const statusElement = document.getElementById('status-message') || loadStatusDiv; // Try finding a general status or fallback
+        if(statusElement) {
+             // Assuming updateStatus exists and is adapted or you manually set it
+             updateStatus("Critical Error: Offline storage unavailable. App cannot function correctly.", "error");
+        } else {
+            alert("Critical Error: Offline storage unavailable. App cannot function correctly."); // Fallback alert
+        }
+        // Potentially disable UI elements here if needed
         return; // Stop further initialization
     });
 
-    if (currentMode === 'standalone') {
-        console.log("Initializing in Standalone Mode...");
-        fileLoaderSection?.classList.add('hidden');
-        manageAccountsInfo?.classList.add('hidden'); // Hide companion mode message
-        manageCategoriesInfo?.classList.add('hidden'); // Hide companion message
-        setupStandaloneEventListeners(); // Keep standalone specific listeners here
-        // setupNavButtonListeners(); // <<<<<< REMOVE from here
+    // 2. Setup Listeners Specific to Standalone Functionality
+    // (These handle adding accounts/categories and the standalone import button)
+    setupStandaloneEventListeners();
+
+    // 3. Load Initial Data from IndexedDB
+    // This function now also handles calling processBudgetData('standalone')
+    try {
         await loadDataFromDB();
-        if (dashboardSection) dashboardSection.classList.remove('hidden');
-        setActiveNavLink('dashboard-summary');
-    } else { // Companion Mode
-        console.log("Initializing in Companion Mode...");
-        fileLoaderSection?.classList.remove('hidden');
-        manageAccountsInfo?.classList.remove('hidden'); // Show companion mode message
-        manageCategoriesInfo?.classList.remove('hidden'); // Show companion message
-        // Disable forms in companion mode logic ...
-        updateStatus("Companion Mode: Please load your budget file.", "info");
-        await loadPendingTransactionsAndUpdateCount();
+    } catch (error) {
+        console.error("Error loading initial data:", error);
+        // Display error to user, potentially using updateStatus if it's adapted
+        const statusElement = document.getElementById('status-message') || loadStatusDiv; // Reuse status element
+        if (statusElement) {
+            updateStatus(`Error loading data: ${error}. Please try refreshing.`, 'error');
+        }
+        // Show an empty state UI rather than potentially broken data
+        processBudgetData(null, 'standalone'); // Process null to show 'no data' state
     }
 
-    // Setup other event listeners etc.
+    // 4. Setup Common Event Listeners (Used in Standalone Mode)
     if (currentYearSpan) currentYearSpan.textContent = new Date().getFullYear();
-    if (fileInput) fileInput.addEventListener('change', handleFileSelect);
-    setupMenuListeners();
-    setupNavLinks();
-    setupFilterListeners();
-    setupAddFormListeners();
-    setupSyncButtonListeners();
-    setupSettingsListeners(); 
-    setupNavButtonListeners();
-    setupBudgetEditingListener();
+    setupMenuListeners();           // Side menu toggle
+    setupNavLinks();              // Main navigation links
+    setupFilterListeners();         // Transaction filters
+    setupAddFormListeners();        // Add transaction form
+    setupSyncButtonListeners();     // Standalone Export/Import buttons
+    setupNavButtonListeners();      // Budget/Chart date navigation
+    setupBudgetEditingListener();   // Inline budget editing
+
+    // 5. Set Initial View (Dashboard)
+    if (dashboardSection) {
+         dashboardSection.classList.remove('hidden'); // Ensure dashboard is visible initially
+    } else {
+        console.warn("Dashboard section not found on initialization.");
+    }
+    setActiveNavLink('dashboard-summary'); // Highlight dashboard link in the menu
+
 
     console.log("Application initialization complete.");
 }
 
 // --- Setup Budget Editing Listener ---
 function setupBudgetEditingListener() {
-    if (currentMode !== 'standalone') {
-        console.log("Budget editing disabled in Companion mode.");
-        return; // Only enable in Standalone mode
-    }
-
     if (budgetTbody) {
         budgetTbody.addEventListener('click', handleBudgetCellClick);
         console.log("Budget editing listener attached.");
@@ -293,7 +279,6 @@ function setupBudgetEditingListener() {
 function setupStandaloneEventListeners() {
     if (addAccountForm) {
         addAccountForm.addEventListener('submit', handleAddAccount);
-         // Re-enable form elements if they were disabled by companion mode logic on a previous load
          addAccountForm.style.opacity = '1';
          const inputs = addAccountForm.querySelectorAll('input, select, button');
          inputs.forEach(el => el.disabled = false);
@@ -365,34 +350,8 @@ function handleChartNav(event) {
 /** Reads mode from localStorage and updates the global variable and UI radio buttons */
 function setAppModeUI() {
     const storedMode = localStorage.getItem(APP_MODE_KEY);
-    currentMode = storedMode === 'standalone' ? 'standalone' : 'companion'; // Default to companion
+    currentMode = storedMode === 'standalone' ? 'standalone' : 'standalone'; // Default to standalone
     console.log(`Current App Mode set to: ${currentMode}`);
-
-    if (modeStandaloneRadio && modeCompanionRadio) {
-        if (currentMode === 'standalone') {
-            modeStandaloneRadio.checked = true;
-        } else {
-            modeCompanionRadio.checked = true;
-        }
-    }
-
-    // Update Sync section visibility based on mode
-    updateSyncSectionUI();
-}
-
-/** Updates the visibility of content within the Sync/Export section */
-function updateSyncSectionUI() {
-    if (!syncSection || !syncSectionTitle || !syncCompanionContent || !syncStandaloneContent) return;
-
-    if(currentMode === 'standalone') {
-        syncSectionTitle.textContent = "Export Data (Standalone Mode)";
-        syncCompanionContent.classList.add('hidden');
-        syncStandaloneContent.classList.remove('hidden');
-    } else { // Companion
-        syncSectionTitle.textContent = "Sync Data (Companion Mode)";
-        syncCompanionContent.classList.remove('hidden');
-        syncStandaloneContent.classList.add('hidden');
-    }
 }
 
 /** Sets up listeners for the mode change radio buttons */
@@ -401,56 +360,6 @@ function setupSettingsListeners() {
    radios.forEach(radio => {
        radio.addEventListener('change', handleModeChange);
    });
-}
-
-/** Handles the change event for the mode radio buttons */
-function handleModeChange(event) {
-    const newMode = event.target.value;
-    if (newMode !== 'companion' && newMode !== 'standalone') return; // Invalid value
-    
-    const previousMode = currentMode;
-    if (newMode === previousMode) return; // No change
-    
-    // Save the new mode
-    localStorage.setItem(APP_MODE_KEY, newMode);
-    currentMode = newMode; // Update global variable immediately
-    console.log(`App Mode changed to: ${currentMode}`);
-    
-    // Update UI and inform user
-    if (settingsStatusDiv) {
-        settingsStatusDiv.textContent = `Mode changed to ${currentMode}. Reload the application for the change to take full effect.`;
-        settingsStatusDiv.className = 'status-info';
-    }
-    updateSyncSectionUI(); // Update sync section immediately
-    
-    // --- CRITICAL: Clear data associated with the *previous* mode ---
-    // This prevents mixing data from both modes, which would cause chaos.
-    // It's a destructive action, so confirm with the user or be very clear.
-    if (confirm(`Switching mode to ${currentMode} requires clearing data associated with the previous mode (${previousMode}). Proceed? (App will reload)`)) {
-        if (previousMode === 'companion') {
-            // Clear pending transactions, originalBudgetData
-            clearPendingTransactions().catch(console.error);
-            originalBudgetData = null;
-        } else { // previousMode was 'standalone'
-            // Clear ALL budget data from IndexedDB (transactions, accounts, etc.) - implement clearAllStandaloneData()
-            clearAllStandaloneData().catch(console.error);
-            localBudgetData = null;
-        }
-        // Reload the page to apply the new mode cleanly
-        window.location.reload();
-    } else {
-        // User cancelled - revert the change
-        localStorage.setItem(APP_MODE_KEY, previousMode);
-        currentMode = previousMode;
-        event.target.checked = false; // Uncheck the radio they clicked
-        if(previousMode === 'companion') modeCompanionRadio.checked = true; else modeStandaloneRadio.checked = true;
-         if (settingsStatusDiv) {
-            settingsStatusDiv.textContent = `Mode change cancelled. Remaining in ${currentMode} mode.`;
-            settingsStatusDiv.className = 'status-info';
-        }
-        console.log("Mode change cancelled by user.");
-        updateSyncSectionUI(); // Revert sync section UI
-    }
 }
 
 // --- Event Listener Setup Functions --- (Grouped for clarity)
@@ -482,8 +391,6 @@ function setupAddFormListeners() {
 }
 
 function setupSyncButtonListeners() {
-    if (exportDataButton) exportDataButton.addEventListener('click', handleExportData); // Companion mode export
-    if (clearPendingButton) clearPendingButton.addEventListener('click', handleClearPending); // Companion mode clear
     if (exportStandaloneButton) exportStandaloneButton.addEventListener('click', handleExportStandaloneData); // Standalone mode export
 }
 
@@ -524,14 +431,6 @@ function handleNavLinkClick(event) {
         targetSection.classList.remove('hidden');
         console.log(`Navigating to section: #${sectionId}`);
 
-        // Special handling for sync section UI update when navigated to
-        if (sectionId === 'sync-section') {
-            updateSyncSectionUI();
-            if (currentMode === 'companion') {
-                loadPendingTransactionsAndUpdateCount(); // Refresh count on view
-            }
-        }
-
     } else {
         console.warn(`Target section not found: #${sectionId}`);
         // Fallback to dashboard
@@ -562,56 +461,6 @@ function setActiveNavLink(sectionId) {
 }
 
 // --- Core Functions ---
-
-/**
- * Handles the file selection event (COMPANION MODE ONLY).
- * @param {Event} event The file input change event.
- */
-function handleFileSelect(event) {
-    // *** Check Mode ***
-    if (currentMode !== 'companion') {
-        updateStatus("File loading is only available in Companion Mode.", "error");
-        event.target.value = null; // Clear the file input
-        return;
-    }
-
-    const file = event.target.files[0];
-    if (!file) {
-        updateStatus("No file selected.", "info");
-        return;
-    }
-    // (rest of file validation and reading logic is the same)
-    if (file.type !== "application/json") {
-        updateStatus(`Error: Selected file (${file.name}) is not a JSON file.`, "error");
-        clearDataDisplay(); // Clear any old data
-        // Keep file loader visible, hide others
-        mainSections.forEach(section => { if (section.id !== 'file-loader' && section.id !== 'settings-section') section.classList.add('hidden'); });
-        return;
-    }
-    updateStatus(`Reading file: ${file.name}...`, "info");
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        const fileContent = e.target.result;
-        try {
-            const jsonData = JSON.parse(fileContent);
-            updateStatus(`File ${file.name} loaded successfully. Processing...`, "success");
-            processBudgetData(jsonData, 'companion'); // Pass mode explicitly
-        } catch (error) {
-            console.error("Error parsing JSON:", error);
-            updateStatus(`Error: Could not parse JSON file (${file.name}). ${error.message}`, "error");
-            clearDataDisplay();
-             mainSections.forEach(section => { if (section.id !== 'file-loader' && section.id !== 'settings-section') section.classList.add('hidden'); });
-        }
-    };
-    reader.onerror = function(e) {
-        console.error("Error reading file:", e);
-        updateStatus(`Error reading file ${file.name}.`, "error");
-        clearDataDisplay();
-        mainSections.forEach(section => { if (section.id !== 'file-loader' && section.id !== 'settings-section') section.classList.add('hidden'); });
-    };
-    reader.readAsText(file);
-}
-
 
 /**
  * Displays existing accounts in the Manage Accounts section list.
@@ -1145,22 +994,10 @@ async function processBudgetData(data, mode) {
     data.ready_to_assign = data.ready_to_assign || 0.0;
 
     let allTransactionsForDisplay = [];
-    let pendingTransactions = []; // Relevant for companion mode display
 
     try {
-        if (mode === 'companion') {
-            originalBudgetData = JSON.parse(JSON.stringify(data)); // Store original
-            pendingTransactions = await loadPendingTransactions();
-            updatePendingCountUI(pendingTransactions.length);
-            allTransactionsForDisplay = [...data.transactions, ...pendingTransactions];
-            // Temporarily store pending transactions in localBudgetData for update functions
-            localBudgetData = { pendingTransactions: pendingTransactions };
-        } else { // Standalone Mode
-            localBudgetData = JSON.parse(JSON.stringify(data)); // Store loaded data
-            allTransactionsForDisplay = data.transactions || [];
-            updatePendingCountUI(0); // No pending in standalone
-        }
-
+        localBudgetData = JSON.parse(JSON.stringify(data)); // Store loaded data
+        allTransactionsForDisplay = data.transactions || [];
         // --- Determine date range ---
         earliestDataMonth = findEarliestMonth(allTransactionsForDisplay);
         latestDataMonth = findLatestMonth(allTransactionsForDisplay);
@@ -1201,11 +1038,6 @@ async function processBudgetData(data, mode) {
         displayAccountBalances(data.accounts);
         displayRTA(data.ready_to_assign);
 
-        // --- Display Transactions List (shows all relevant transactions) ---
-        displayTransactions(
-            mode === 'companion' ? data.transactions : [],
-            mode === 'companion' ? pendingTransactions : allTransactionsForDisplay
-        );
         resetAllFilters();
 
         // --- Update Views for Initial Month ---
@@ -1214,7 +1046,6 @@ async function processBudgetData(data, mode) {
         // ---
 
         // --- Final UI State ---
-        if (fileLoaderSection && mode === 'companion') fileLoaderSection.classList.add('hidden');
         updateStatus(`Data processed for ${mode} mode. Displaying ${initialDisplayMonth}.`, "success");
 
     } catch (uiError) {
@@ -1222,11 +1053,6 @@ async function processBudgetData(data, mode) {
         updateStatus(`Error displaying data: ${uiError.message}`, "error");
         // Clear display in case of partial failure
          clearDataDisplay();
-         if (mode === 'companion') {
-             // Show file loader again if companion mode failed
-             fileLoaderSection?.classList.remove('hidden');
-             mainSections.forEach(section => { if (section.id !== 'file-loader' && section.id !== 'settings-section') section.classList.add('hidden'); });
-         }
     }
 }
 
@@ -1301,7 +1127,7 @@ function updateBudgetView(period) {
     console.log(`Updating Budget View for: ${period}`);
     currentBudgetMonth = period; // Update state
 
-    const data = (currentMode === 'standalone') ? localBudgetData : originalBudgetData;
+    const data = localBudgetData;
     if (!data) {
         console.warn("No data available to update budget view.");
         renderBudgetTable([], { budgeted: 0, spent: 0, available: 0 }, period); // Render empty state
@@ -1314,9 +1140,6 @@ function updateBudgetView(period) {
     if (currentMode === 'standalone') {
         transactionsToUse = data.transactions || [];
     } else { // Companion mode
-        const pending = localBudgetData?.pendingTransactions || []; // Assume pending are stored here temporarily
-        transactionsToUse = [...(data.transactions || []), ...pending];
-        if (pending.length > 0) titleSuffix = " (incl. pending)";
     }
 
     // Calculate data for the specific period
@@ -1336,43 +1159,40 @@ function updateBudgetView(period) {
 }
 
 /**
- * Updates the Chart View section for a specific period.
+ * Updates the Chart View section for a specific period (Standalone Mode Only).
  * @param {string} period The target period ("YYYY-MM").
  */
 function updateChartView(period) {
     console.log(`Updating Chart View for: ${period}`);
     currentChartMonth = period; // Update state
 
-    const data = (currentMode === 'standalone') ? localBudgetData : originalBudgetData;
-     if (!data) {
+    // --- Use localBudgetData directly (Standalone Mode) ---
+    const data = localBudgetData;
+
+    if (!data) {
         console.warn("No data available to update chart view.");
         renderSpendingChart(null); // Render empty state
         if (chartMonthDisplaySpan) chartMonthDisplaySpan.textContent = period || '--';
+        updateNavButtonStates(chartPrevMonthBtn, chartNextMonthBtn, period); // Still update buttons for empty state
         return;
     }
 
-    // Determine transactions to use based on mode
-    let transactionsToUse = [];
-    let titleSuffix = "";
-     if (currentMode === 'standalone') {
-        transactionsToUse = data.transactions || [];
-    } else { // Companion mode
-        const pending = localBudgetData?.pendingTransactions || [];
-        transactionsToUse = [...(data.transactions || []), ...pending];
-         if (pending.length > 0) titleSuffix = " (incl. pending)";
-    }
-     if (chartMonthDisplaySpan) chartMonthDisplaySpan.textContent = period + titleSuffix;
+    // --- Use transactions directly from localBudgetData (Standalone Mode) ---
+    // Ensure transactions exist, default to empty array if not
+    const transactionsToUse = data.transactions || [];
 
+    // --- Update title without suffix (Standalone Mode) ---
+    if (chartMonthDisplaySpan) chartMonthDisplaySpan.textContent = period || '--';
 
-    // Calculate chart data
+    // Calculate chart data using standalone transactions and category groups
     const chartData = calculateSpendingBreakdown(
         period,
         transactionsToUse,
-        data.category_groups || {}
+        data.category_groups || {} // Category groups are still needed
     );
 
-    // Render the chart
-    renderSpendingChart(chartData); // Handles null data internally
+    // Render the chart (handles null data internally)
+    renderSpendingChart(chartData);
 
     // Update navigation button states
     updateNavButtonStates(chartPrevMonthBtn, chartNextMonthBtn, period);
@@ -1613,10 +1433,8 @@ function renderBudgetTable(budgetRows, totals, period, titleSuffix = "") {
             cellBudgeted.textContent = formatCurrency(row.budgeted);
             cellBudgeted.className = `currency ${getCurrencyClass(row.budgeted, true)}`;
             cellBudgeted.style.textAlign = 'right';
-            if (currentMode === 'standalone') { // <<< --- Only add class in standalone mode
-                cellBudgeted.classList.add('editable-budget');
-                cellBudgeted.title = "Click to edit budget"; // Add tooltip
-            }
+            cellBudgeted.classList.add('editable-budget');
+            cellBudgeted.title = "Click to edit budget"; // Add tooltip
 
             const cellSpent = tr.insertCell();
             cellSpent.textContent = formatCurrency(row.spent);
@@ -1989,7 +1807,6 @@ function displayRTA(rta = 0.0) {
 
 /**
  * Displays transactions in the table.
- * In Companion mode, marks pending transactions.
  * In Standalone mode, shows all transactions from the main store.
  * @param {Array} originalTransactions Original transactions (Companion mode only).
  * @param {Array} displayTransactions Transactions to display (Pending in Companion, All in Standalone).
@@ -1999,30 +1816,13 @@ function displayTransactions(originalTransactions = [], displayTransactions = []
     transactionsTbody.innerHTML = '';
 
     let combinedForSort = [];
-    let useOriginal = currentMode === 'companion';
-
-    if (useOriginal) {
-        // Mark original as not pending, pending as pending
-        const markedOriginal = originalTransactions.map(tx => ({
-            ...tx,
-            isPending: false,
-            db_id: tx.id || null // Explicitly assign db_id from original id, fallback to null 
-       }));
-       const markedPending = displayTransactions.map(tx => ({
+    
+    // In standalone, all transactions are from the main store, none are "pending" in the same way
+    combinedForSort = displayTransactions.map(tx => ({
         ...tx,
-        isPending: true,
-        db_id: tx.id // This 'id' comes from the pending store's keyPath
+        db_id: tx.id // This 'id' comes from the main transaction store's keyPath
     }));
-        combinedForSort = [...markedOriginal, ...markedPending];
-    } else {
-        // In standalone, all transactions are from the main store, none are "pending" in the same way
-        combinedForSort = displayTransactions.map(tx => ({
-            ...tx,
-            isPending: false,
-            db_id: tx.id // This 'id' comes from the main transaction store's keyPath
-        }));
-    }
-
+    
 
     if (combinedForSort.length === 0) {
         transactionsTbody.innerHTML = `<tr><td colspan="7">No transactions found.</td></tr>`;
@@ -2047,7 +1847,6 @@ function displayTransactions(originalTransactions = [], displayTransactions = []
 
     sortedTransactions.forEach(tx => {
         const row = transactionsTbody.insertRow();
-        const isPending = tx.isPending; // Use the flag we added
         const transactionDbId = tx.db_id;
 
         // Store data attributes
@@ -2077,8 +1876,7 @@ function displayTransactions(originalTransactions = [], displayTransactions = []
         icon.setAttribute('aria-label', iconTitle); cellIcon.appendChild(icon);
 
         const cellDate = row.insertCell(1); cellDate.textContent = txDate || 'N/A';
-        if (isPending) cellDate.innerHTML = `<span title="Pending Entry" style="font-weight:bold; color: orange;">[P]</span> ${cellDate.textContent}`;
-
+        
         const cellAccount = row.insertCell(2); cellAccount.textContent = displayAccount; if (txType === 'transfer') cellAccount.style.fontStyle = 'italic';
         const cellPayee = row.insertCell(3); cellPayee.textContent = txPayee || txMemo || 'N/A';
         const cellCategory = row.insertCell(4); cellCategory.textContent = txCategory || '-';
@@ -2098,14 +1896,13 @@ function displayTransactions(originalTransactions = [], displayTransactions = []
         // and if it's either a Pending transaction (Companion) or any transaction (Standalone)
         // Don't allow deleting original/synced transactions in Companion mode visually.
         // *** Check transactionDbId is not null ***
-        if (transactionDbId !== null && (isPending || currentMode === 'standalone')) {
+        if (transactionDbId !== null && (currentMode === 'standalone')) {
             const deleteButton = document.createElement('button');
             deleteButton.classList.add('delete-tx-button');
             deleteButton.setAttribute('aria-label', 'Delete Transaction');
             deleteButton.title = 'Delete Transaction';
             deleteButton.dataset.txId = transactionDbId; // Use the DB ID as the key
-            deleteButton.dataset.txIsPending = isPending; // Store if it was pending
-
+            
             const deleteIcon = document.createElement('i');
             deleteIcon.classList.add('fa-solid', 'fa-trash-can');
             deleteButton.appendChild(deleteIcon);
@@ -2188,7 +1985,6 @@ function populateCategoryFilter(categories = [], transactions = [], selectElemen
 async function handleDeleteTransactionClick(event) {
     const button = event.currentTarget;
     const transactionId = button.dataset.txId;
-    const isPending = button.dataset.txIsPending === 'true'; // Convert string back to boolean
 
     // Ensure we have an ID (should always be the case if button exists)
     if (!transactionId) {
@@ -2218,23 +2014,6 @@ async function handleDeleteTransactionClick(event) {
             // UI update is handled by loadDataFromDB called within deleteTransactionStandalone
 
         } else { // Companion Mode
-            // Companion: Only delete if it's a pending transaction
-            if (isPending) {
-                console.log(`Attempting to delete pending transaction ID: ${transactionId}`);
-                // Need to parse the ID back to a number as it's the auto-incremented key
-                await deletePendingTransaction(parseInt(transactionId, 10));
-                success = true;
-                // Manually update UI for pending deletion
-                button.closest('tr')?.remove(); // Remove row visually
-                const pending = await loadPendingTransactions();
-                updatePendingCountUI(pending.length); // Update count
-                // Maybe re-filter if filters are active? For simplicity, just remove the row.
-                filterTransactions(); // Re-apply filters to update no-results message if needed
-            } else {
-                // Should not happen as button shouldn't be added for non-pending in companion mode
-                console.warn("Attempted to delete a non-pending transaction in Companion Mode.");
-                updateStatus("Cannot delete synced transactions in Companion Mode.", "info");
-            }
         }
 
         if (success) {
@@ -2249,101 +2028,6 @@ async function handleDeleteTransactionClick(event) {
          if (icon) icon.classList.replace('fa-spinner', 'fa-trash-can'); icon.classList.remove('fa-spin');
     }
     // No finally needed as button is either removed on success or re-enabled on error
-}
-
-// --- IndexedDB Interaction Functions (Separated by Mode) ---
-
-// --- Companion Mode DB Functions ---
-
-/** Saves a single pending transaction to IndexedDB (Companion Mode). */
-function savePendingTransaction(transaction) {
-    return new Promise(async (resolve, reject) => {
-        if (!db) return reject("Database not initialized.");
-        transaction.status = 'pending'; // Mark status
-        transaction.entry_timestamp = new Date().toISOString();
-        const tx = db.transaction(PENDING_TX_STORE_NAME, 'readwrite');
-        const store = tx.objectStore(PENDING_TX_STORE_NAME);
-        const request = store.add(transaction);
-        request.onsuccess = (event) => resolve(event.target.result); // Return new ID
-        request.onerror = (event) => { console.error("Error saving pending tx:", event.target.error); reject("Error saving transaction."); };
-        tx.oncomplete = () => console.log("Pending TX saved ID:", request.result);
-        tx.onerror = (event) => console.error("Pending TX save transaction error:", event.target.error);
-    });
-}
-
-// --- Delete Pending Transaction (Companion Mode) ---
-/**
- * Deletes a specific pending transaction from IndexedDB (Companion Mode).
- * @param {number} id The auto-incremented ID of the pending transaction to delete.
- * @returns {Promise<void>}
- */
-function deletePendingTransaction(id) {
-    return new Promise(async (resolve, reject) => {
-        if (!db) return reject("Database not initialized.");
-        if (currentMode !== 'companion') return reject("Can only delete pending in Companion mode.");
-        if (typeof id !== 'number' || isNaN(id)) return reject("Invalid ID provided for pending deletion.");
-
-        const tx = db.transaction(PENDING_TX_STORE_NAME, 'readwrite');
-        const store = tx.objectStore(PENDING_TX_STORE_NAME);
-        const request = store.delete(id); // Use the ID which is the keyPath
-
-        request.onsuccess = () => {
-            console.log(`Pending transaction ID ${id} deleted from DB.`);
-        };
-        request.onerror = (event) => {
-            console.error(`Error deleting pending tx ID ${id}:`, event.target.error);
-            reject(`Error deleting pending transaction: ${event.target.error}`);
-        };
-
-        tx.oncomplete = () => {
-            console.log(`Delete pending transaction ID ${id} transaction complete.`);
-            resolve();
-        };
-        tx.onerror = (event) => {
-            console.error("Delete pending transaction failed:", event.target.error);
-            // Reject might have been called by request.onerror already
-            reject(`Transaction failed for pending delete: ${event.target.error}`);
-        };
-    });
-}
-
-/** Loads all pending transactions from IndexedDB (Companion Mode). */
-function loadPendingTransactions() {
-    return new Promise(async (resolve, reject) => {
-        if (!db) return reject("Database not initialized.");
-        const tx = db.transaction(PENDING_TX_STORE_NAME, 'readonly');
-        const store = tx.objectStore(PENDING_TX_STORE_NAME);
-        const request = store.getAll();
-        request.onsuccess = (event) => resolve(event.target.result || []);
-        request.onerror = (event) => { console.error("Error loading pending tx:", event.target.error); reject("Error loading transactions."); };
-    });
-}
-
-/** Clears all pending transactions from IndexedDB (Companion Mode). */
-function clearPendingTransactions() {
-    return new Promise(async (resolve, reject) => {
-        if (!db) return reject("Database not initialized.");
-        const tx = db.transaction(PENDING_TX_STORE_NAME, 'readwrite');
-        const store = tx.objectStore(PENDING_TX_STORE_NAME);
-        const request = store.clear();
-        request.onsuccess = () => resolve();
-        request.onerror = (event) => { console.error("Error clearing pending tx:", event.target.error); reject("Error clearing transactions."); };
-        tx.oncomplete = () => console.log("Pending TX store cleared.");
-    });
-}
-/** Helper to load pending transactions and update the UI count */
-async function loadPendingTransactionsAndUpdateCount() {
-    if (currentMode !== 'companion') {
-       updatePendingCountUI(0);
-       return;
-    }
-    try {
-       const pending = await loadPendingTransactions();
-       updatePendingCountUI(pending.length);
-    } catch (error) {
-        console.error("Failed to load pending count:", error);
-        updatePendingCountUI(0); // Show 0 on error
-    }
 }
 
 // --- Standalone Mode DB Functions ---
@@ -3329,21 +3013,7 @@ async function handleAddTransaction(event) {
             await saveTransactionStandalone(newTx);
             // UI update happens inside saveTransactionStandalone via loadDataFromDB callback
             // No need to manually call displayTransactions here if loadDataFromDB handles it
-
         } else { // Companion Mode
-            // Save to pending store
-            const newId = await savePendingTransaction(newTx);
-            // Update UI immediately
-            const updatedPending = await loadPendingTransactions();
-            updatePendingCountUI(updatedPending.length);
-            // Re-render the transaction table with original + new pending list
-            displayTransactions(originalBudgetData?.transactions || [], updatedPending);
-            resetAllFilters();
-             // Clear the form
-             newTxForm.reset(); txDateInput.valueAsDate = new Date();
-             // Update status
-             addTxStatusDiv.textContent = "Transaction added locally (pending sync).";
-             addTxStatusDiv.className = 'status-success';
         }
 
     } catch (error) {
@@ -3351,16 +3021,6 @@ async function handleAddTransaction(event) {
         addTxStatusDiv.textContent = `Error: ${error}`;
         addTxStatusDiv.className = 'status-error';
     }
-}
-
-// --- Sync Section Handling (Companion Mode) ---
-
-/** Updates the pending count display and button states (Companion Mode). */
-function updatePendingCountUI(count) {
-    if (currentMode !== 'companion') count = 0; // Force 0 if not companion mode
-    if (pendingCountSpan) pendingCountSpan.textContent = count;
-    if (exportDataButton) exportDataButton.disabled = count === 0;
-    if (clearPendingButton) clearPendingButton.disabled = count === 0;
 }
 
 /** Generates a Version 4 UUID string. */
@@ -3374,95 +3034,6 @@ function generateUUID() { /* ... keep existing UUID function ... */
             return v.toString(16);
         });
     }
-}
-
-
-/** Handles the export data button click (Companion Mode). */
-async function handleExportData() {
-    if (currentMode !== 'companion') return; // Only for companion mode
-    if (!originalBudgetData) {
-        updateExportStatus("Error: No original data loaded to merge with.", "error");
-        return;
-    }
-    updateExportStatus("Preparing export...", "info");
-
-    try {
-        const pendingTransactions = await loadPendingTransactions();
-        if (pendingTransactions.length === 0) {
-            updateExportStatus("No pending transactions to export.", "info");
-            return;
-        }
-
-        let finalData = JSON.parse(JSON.stringify(originalBudgetData)); // Deep copy
-
-        pendingTransactions.forEach(pendingTx => {
-             const { status, entry_timestamp, id, ...txDataFromDB } = pendingTx; // Exclude DB id, status, timestamp
-             const txToSave = {
-                 ...txDataFromDB,
-                 id: generateUUID(), // Generate NEW UUID for final data
-                 amount: parseFloat(txDataFromDB.amount || 0),
-             };
-             finalData.transactions.push(txToSave);
-
-             // Adjust balances/RTA
-             const amount = txToSave.amount;
-             const accountName = txToSave.account;
-             const txType = txToSave.type;
-             if (finalData.accounts[accountName] === undefined) {
-                 console.warn(`Account '${accountName}' not found during export recalculation for pending tx. Balance/RTA might be inaccurate.`);
-             } else {
-                 if (txType === 'income') { finalData.accounts[accountName] += amount; finalData.ready_to_assign += amount; }
-                 else if (txType === 'expense') { finalData.accounts[accountName] -= amount; }
-                 else if (txType === 'refund') { finalData.accounts[accountName] += amount; }
-                 // Add transfer logic if needed
-             }
-        });
-
-        // Trigger download (reuse existing logic)
-        const jsonDataString = JSON.stringify(finalData, null, 4);
-        const blob = new Blob([jsonDataString], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `budget_data_${new Date().toISOString().slice(0,10)}_updated.json`; // Indicate update
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        updateExportStatus("Export file generated. Save it and manually replace your original file.", "success");
-        // DO NOT clear pending automatically.
-
-    } catch (error) {
-        console.error("Export failed:", error);
-        updateExportStatus(`Export failed: ${error}`, "error");
-    }
-}
-
-/** Handles the clear pending button click (Companion Mode). */
-async function handleClearPending() {
-    if (currentMode !== 'companion') return; // Only for companion mode
-    if (confirm("Are you sure you want to clear all locally saved, unsynced transactions (Companion Mode)? This cannot be undone.")) {
-         updateExportStatus("Clearing pending entries...", "info");
-         try {
-             await clearPendingTransactions();
-             updatePendingCountUI(0);
-             // Re-render the transaction list without pending items
-             displayTransactions(originalBudgetData?.transactions || [], []);
-             updateExportStatus("Pending entries cleared.", "success");
-             if(addTxStatusDiv) addTxStatusDiv.textContent = ""; // Clear add form status too
-         } catch (error) {
-              console.error("Failed to clear pending:", error);
-             updateExportStatus(`Error clearing pending entries: ${error}`, "error");
-         }
-    }
-}
-
-/** Updates the export status message area (Companion Mode). */
-function updateExportStatus(message, type = "info") {
-    if (exportStatusDiv) {
-        exportStatusDiv.textContent = message;
-        exportStatusDiv.className = `status-${type}`;
-    }
-    console.log(`Export Status [${type}]: ${message}`);
 }
 
 // --- Filter Functions --- 
