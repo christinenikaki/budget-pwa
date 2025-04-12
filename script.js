@@ -1285,6 +1285,7 @@ function calculateCategorySpendingJS(period, categoryName, transactions) {
 
 /**
  * Calculates the data needed for the budget view table for a specific period.
+ * EXCLUDES categories assigned to the "Income" group.
  * @param {string} period The target period (YYYY-MM).
  * @param {Array} categories List of all category names.
  * @param {object} budgetPeriodsData Budget data { "YYYY-MM": { "Category": Amount } }.
@@ -1296,7 +1297,7 @@ function calculateBudgetViewData(period, categories = [], budgetPeriodsData = {}
     const budgetRows = [];
     let totalBudgeted = 0.0;
     let totalSpent = 0.0; // Activity total
-    let totalAvailable = 0.0; // Running total available
+    // Total available calculation depends on previous + budgeted - spent of *included* rows
 
     // Exclude internal/special categories and sort
     let displayCategories = categories.filter(c => c !== UNKNOWN_INCOME_SOURCE);
@@ -1316,30 +1317,47 @@ function calculateBudgetViewData(period, categories = [], budgetPeriodsData = {}
 
     displayCategories.forEach(cat => {
         const group = groupsData[cat] || 'Unassigned'; // Use 'Unassigned' if no group found
+
+        // --- Skip "Income" group categories --- >>>
+        if (group === 'Income') {
+            console.log(`Skipping income category from budget view: ${cat}`);
+            return; // Continue to the next category in the loop
+        }
+
         const isArchived = group === ARCHIVED_GROUP_NAME;
         const isSavingsGoal = group === SAVINGS_GROUP_NAME;
 
-        // *** Skip Archived Categories *** (Simplified: Always skip for now)
+        // Skip Archived Categories (Keep existing logic)
         if (isArchived) {
             console.log(`Skipping archived category: ${cat}`);
             return; // continue to next category
         }
 
+        // --- Calculations for non-income, non-archived categories ---
         const budgeted = periodBudget[cat] || 0.0;
         const spent = calculateCategorySpendingJS(period, cat, transactions);
 
         let prevAvailable = 0.0;
         if (previousPeriod) {
             const prevBudgeted = previousPeriodBudget[cat] || 0.0;
+            // Need to check if the category existed and wasn't income/archived in the previous period too for accurate prevSpent
+            // For simplicity now, calculate prevSpent regardless, but this could be refined if needed.
             const prevSpent = calculateCategorySpendingJS(previousPeriod, cat, transactions);
-            prevAvailable = prevBudgeted - prevSpent;
+             // Let's refine: Only calculate prevAvailable if it wasn't income/archived previously
+             const prevGroup = groupsData[cat] || 'Unassigned';
+             if (prevGroup !== 'Income' && prevGroup !== ARCHIVED_GROUP_NAME) {
+                prevAvailable = prevBudgeted - prevSpent;
+             } else {
+                 prevAvailable = 0.0; // Treat as 0 carry-over if it was income/archived previously
+             }
+
         }
 
         const available = prevAvailable + budgeted - spent;
 
         budgetRows.push({
             name: cat,
-            group: group, 
+            group: group,
             prev_avail: prevAvailable,
             budgeted: budgeted,
             spent: spent, // This is 'Activity'
@@ -1348,16 +1366,15 @@ function calculateBudgetViewData(period, categories = [], budgetPeriodsData = {}
             // is_archived: isArchived // We filter out archived above
         });
 
-        // Accumulate totals (only for non-archived rows)
+        // Accumulate totals (only for non-archived, non-income rows)
         totalBudgeted += budgeted;
         totalSpent += spent;
-        // Total available is calculated cumulatively at the end from totals
+        // Total available is calculated cumulatively at the end
     });
 
-    totalAvailable = (budgetRows.reduce((sum, row) => sum + row.prev_avail, 0)) + totalBudgeted - totalSpent;
-    // Alt check: Sum of individual 'available' amounts should match:
-    // const sumAvailable = budgetRows.reduce((sum, row) => sum + row.available, 0);
-    // console.log("Check Total Available:", totalAvailable, "vs Sum:", sumAvailable);
+    // Calculate total available based ONLY on rows included in budgetRows
+    const totalPrevAvailable = budgetRows.reduce((sum, row) => sum + row.prev_avail, 0);
+    totalAvailable = totalPrevAvailable + totalBudgeted - totalSpent;
 
     return {
         rows: budgetRows,
@@ -1368,109 +1385,6 @@ function calculateBudgetViewData(period, categories = [], budgetPeriodsData = {}
         }
     };
 }
-
-// --- Budget Table Rendering Function ---
-
-/**
- * Renders the calculated budget data into the HTML table.
- * ADDS data-category to rows and editable-budget class to budgeted cells.
- * @param {Array<object>} budgetRows Array of row data objects.
- * @param {{budgeted: number, spent: number, available: number}} totals Calculated totals.
- * @param {string} period The period being displayed (YYYY-MM).
- * @param {string} titleSuffix Optional suffix for the title (e.g., " (incl. pending)").
- */
-function renderBudgetTable(budgetRows, totals, period, titleSuffix = "") {
-    // Clear previous content
-    if (budgetTbody) budgetTbody.innerHTML = '';
-    if (budgetViewMonthSpan) budgetViewMonthSpan.textContent = (period || '--') + titleSuffix;
-
-    // Clear totals
-    if (totalBudgetedValueTd) totalBudgetedValueTd.textContent = '--';
-    if (totalSpentValueTd) totalSpentValueTd.textContent = '--';
-    if (totalAvailableValueTd) totalAvailableValueTd.textContent = '--';
-    if (budgetNoDataMsg) budgetNoDataMsg.classList.add('hidden');
-
-    if (!budgetTbody || !budgetRows || budgetRows.length === 0) {
-         if (budgetNoDataMsg) budgetNoDataMsg.classList.remove('hidden');
-        console.warn("No budget rows to render for period:", period);
-        if (totalBudgetedValueTd) totalBudgetedValueTd.textContent = formatCurrency(0);
-        if (totalSpentValueTd) totalSpentValueTd.textContent = formatCurrency(0);
-        if (totalAvailableValueTd) totalAvailableValueTd.textContent = formatCurrency(0);
-        return;
-    }
-
-    const rowsByGroup = {};
-    budgetRows.forEach(row => {
-        const group = row.group || 'Unassigned';
-        if (!rowsByGroup[group]) rowsByGroup[group] = [];
-        rowsByGroup[group].push(row);
-    });
-
-    const sortedGroupNames = Object.keys(rowsByGroup).sort((a, b) => {
-        const groupOrder = {'Income': 1,'Bills': 2,'Expenses': 3,'Savings Goals': 10,'Archived': 11,'Unassigned': 99 };
-        const orderA = groupOrder[a] !== undefined ? groupOrder[a] : 5;
-        const orderB = groupOrder[b] !== undefined ? groupOrder[b] : 5;
-        if (orderA !== orderB) return orderA - orderB;
-        return a.localeCompare(b);
-    });
-
-    sortedGroupNames.forEach(groupName => {
-        const headerRow = budgetTbody.insertRow();
-        headerRow.className = 'budget-group-header';
-        const headerCell = headerRow.insertCell();
-        headerCell.colSpan = 5;
-        headerCell.textContent = groupName;
-
-        const groupRows = rowsByGroup[groupName].sort((a, b) => a.name.localeCompare(b.name));
-
-        groupRows.forEach(row => {
-            const tr = budgetTbody.insertRow();
-            tr.dataset.category = row.name; // <<< --- ADD data-category attribute
-
-            if (row.is_savings_goal) tr.classList.add('savings-goal-row');
-
-            const cellCat = tr.insertCell(); cellCat.textContent = row.name;
-
-            const cellPrevAvail = tr.insertCell();
-            cellPrevAvail.textContent = formatCurrency(row.prev_avail);
-            cellPrevAvail.className = `currency ${getCurrencyClass(row.prev_avail)}`;
-            cellPrevAvail.style.textAlign = 'right';
-
-            const cellBudgeted = tr.insertCell();
-            cellBudgeted.textContent = formatCurrency(row.budgeted);
-            cellBudgeted.className = `currency ${getCurrencyClass(row.budgeted, true)}`;
-            cellBudgeted.style.textAlign = 'right';
-            cellBudgeted.classList.add('editable-budget');
-            cellBudgeted.title = "Click to edit budget"; // Add tooltip
-
-            const cellSpent = tr.insertCell();
-            cellSpent.textContent = formatCurrency(row.spent);
-            cellSpent.className = `currency ${row.spent > 0 ? 'negative-currency' : (row.spent < 0 ? 'positive-currency' : 'zero-currency')}`;
-            cellSpent.style.textAlign = 'right';
-
-            const cellAvailable = tr.insertCell();
-            cellAvailable.textContent = formatCurrency(row.available);
-            cellAvailable.className = `currency ${getCurrencyClass(row.available)}`;
-            cellAvailable.style.textAlign = 'right';
-        });
-    });
-    // Populate totals
-    if (totalBudgetedValueTd) {
-        totalBudgetedValueTd.textContent = formatCurrency(totals.budgeted);
-        totalBudgetedValueTd.className = `currency ${getCurrencyClass(totals.budgeted, true)}`;
-    }
-    if (totalSpentValueTd) {
-        totalSpentValueTd.textContent = formatCurrency(totals.spent);
-         totalSpentValueTd.className = `currency ${totals.spent > 0 ? 'negative-currency' : (totals.spent < 0 ? 'positive-currency' : 'zero-currency')}`;
-    }
-    if (totalAvailableValueTd) {
-        totalAvailableValueTd.textContent = formatCurrency(totals.available);
-        totalAvailableValueTd.className = `currency ${getCurrencyClass(totals.available)}`;
-    }
-    // Re-calculate and display totals AFTER rows are rendered
-    updateBudgetTableTotals();
-}
-
 // --- Helper Function: Update Budget Table Totals ---
 /** Recalculates and updates the footer totals based on current table data. */
 function updateBudgetTableTotals() {
@@ -1496,29 +1410,21 @@ function updateBudgetTableTotals() {
         totalSpent += parseCurrency(spentCell?.textContent || '0');
         // Available total is trickier - it depends on previous month's carryover too.
         // For simplicity here, we recalculate it based on the displayed budgeted/spent for this month.
-        // A full recalculation (`calculateBudgetViewData`) might be needed for perfect accuracy including carryover.
-        // Let's sum the displayed available values for now.
         totalAvailable += parseCurrency(availableCell?.textContent || '0');
     });
 
      // Update the footer cells
     totalBudgetedValueTd.textContent = formatCurrency(totalBudgeted);
-    totalBudgetedValueTd.className = `currency ${getCurrencyClass(totalBudgeted, true)}`;
+    totalBudgetedValueTd.className = `currency`;
+    totalBudgetedValueTd.style.textAlign = 'right';
 
     totalSpentValueTd.textContent = formatCurrency(totalSpent);
-    totalSpentValueTd.className = `currency ${totalSpent > 0 ? 'negative-currency' : (totalSpent < 0 ? 'positive-currency' : 'zero-currency')}`;
+    totalSpentValueTd.className = `currency`; 
+    totalSpentValueTd.style.textAlign = 'right'; 
 
     // Recalculate total available based on sums (more robust than summing individual available cells)
-    // This relies on having the 'prev_available' conceptually available, which isn't stored directly in the DOM easily.
-    // For now, summing the displayed 'available' might be sufficient for visual update,
-    // but a full data reload (`loadDataFromDB`) after saving is the most reliable way.
-    // Let's stick to summing the displayed available column for immediate visual feedback after edit.
     totalAvailableValueTd.textContent = formatCurrency(totalAvailable);
     totalAvailableValueTd.className = `currency ${getCurrencyClass(totalAvailable)}`;
-
-    // Re-calculate and display RTA after updating totals - Needs DB read for accuracy.
-    // We'll trigger this after the save operation instead.
-    // updateRTAFromMetadata(); // Placeholder for a function to read and display RTA
 }
 
 // --- Helper Function: Parse Formatted Currency ---
