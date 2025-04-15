@@ -147,11 +147,6 @@ header {
     display: none;
 }
 
-#file-loader input[type="file"] {
-    display: block;
-    margin-top: 10px;
-}
-
 #load-status {
     margin-top: 15px;
     font-style: italic;
@@ -252,19 +247,6 @@ header {
 /* Style for the Sync section */
 #sync-section p {
     margin-bottom: 10px; /* Space between paragraphs */
-}
-
-#sync-section strong#pending-count {
-    font-weight: bold;
-    /* Maybe add a background or different color */
-     /* background-color: #ffeeba;
-     padding: 2px 5px;
-     border-radius: 3px; */
-}
-
-/* Add spacing between the export/clear buttons */
-#sync-section #clear-pending-button {
-    margin-left: 10px;
 }
 
 /* Ensure status divs within the sections pick up general status styles */
