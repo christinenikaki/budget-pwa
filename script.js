@@ -119,6 +119,7 @@ const BUDGET_PERIOD_STORE_NAME = 'budgetPeriods';
 const METADATA_STORE_NAME = 'metadata'; // For RTA, etc.
 const APP_MODE_KEY = 'budgetAppMode'; // localStorage key for mode
 // --- --- --- --- --- --- --- --- --- --- --- --- ---
+const INCOME_GROUP_NAME = "Income";
 const UNKNOWN_INCOME_SOURCE = "Unknown Income Source";
 const UNCATEGORIZED = "Uncategorized";
 const SAVINGS_GROUP_NAME = "Savings Goals";
@@ -2157,7 +2158,7 @@ function populateAccountFilter(accounts, selectElements = []) {
 }
 
 /**
- * Populates category filter dropdown(s). Filters out internal/archived/savings initially for the add form dropdown.
+ * Populates category filter dropdown(s). Filters out internal/archived for the add form.
  * @param {Array} categories Base categories array.
  * @param {Array} transactions Transactions list (to find implicit categories).
  * @param {Array<HTMLSelectElement>} selectElements Array of select elements to populate.
@@ -2177,34 +2178,29 @@ function populateCategoryFilter(categories = [], transactions = [], selectElemen
     selectElements.forEach(select => {
         if (!select) return;
         const firstOptionText = select.options.length > 0 ? select.options[0].text : "";
-        const isAddFormCategoryDropdown = select.id === 'tx-category'; // Check if it's the add form dropdown
-
-        select.length = 0; // Clear existing options
-        if (firstOptionText.toLowerCase().includes("all") || firstOptionText.toLowerCase().includes("select")) {
-            select.add(new Option(firstOptionText, ""));
+        select.length = 0;
+        if(firstOptionText.toLowerCase().includes("all") || firstOptionText.toLowerCase().includes("select")){
+             select.add(new Option(firstOptionText, ""));
         }
 
         let categoriesForThisSelect = allSortedCategories;
 
-        // --- Initial filtering (Applied to ALL dropdowns initially) ---
-        categoriesForThisSelect = allSortedCategories.filter(cat => {
-            const group = groupsData[cat];
-            if (group === ARCHIVED_GROUP_NAME) return false; // Always exclude Archived
-            if (isAddFormCategoryDropdown && group === SAVINGS_GROUP_NAME) return false; // Exclude Savings from Add Form initially
-            return true;
-        });
+        // Filter for the ADD form dropdown (exclude certain groups)
+        if (select.id === 'tx-category') {
+            categoriesForThisSelect = allSortedCategories.filter(cat =>
+                groupsData[cat] !== SAVINGS_GROUP_NAME &&
+                groupsData[cat] !== ARCHIVED_GROUP_NAME
+            );
+        }
 
-        // Populate the dropdown
         categoriesForThisSelect.forEach(name => {
             if (name) select.add(new Option(name, name));
         });
-    });
-
-     // --- After initial population, specifically update the Add Form dropdown based on its default type ---
-     // This ensures the Add form starts correctly filtered for "Expense"
+    // --- After initial population, specifically update the Add Form dropdown based on its default type ---
      if (txCategorySelect && txTypeSelect) {
-         updateCategoryDropdownForTxType(txTypeSelect.value); // Call the dynamic update function
-     }
+        updateCategoryDropdownForTxType(txTypeSelect.value); // Call the dynamic update function
+    }
+    });
 }
 
 /**
@@ -3017,6 +3013,7 @@ function validateImportData(data) {
 /**
  * Writes the structured data from an imported file into the Standalone IndexedDB stores.
  * ASSUMES `clearAllStandaloneData()` has already been called successfully.
+ * Uses put() for safer writing.
  * @param {object} importedData The validated budget data object.
  * @returns {Promise<void>}
  */
@@ -3024,7 +3021,6 @@ function writeImportedDataToDB(importedData) {
     return new Promise(async (resolve, reject) => {
         if (!db) return reject("Database not initialized for writing.");
 
-        // Get all store names needed for writing
         const storeNames = [
             TX_STORE_NAME, ACCOUNT_STORE_NAME, CATEGORY_STORE_NAME,
             GROUP_STORE_NAME, BUDGET_PERIOD_STORE_NAME, METADATA_STORE_NAME
@@ -3035,102 +3031,142 @@ function writeImportedDataToDB(importedData) {
             if (db.objectStoreNames.contains(name)) {
                 stores[name] = transaction.objectStore(name);
             } else {
-                // This shouldn't happen if initDB ran correctly
-                 console.error(`Store ${name} missing during import write!`);
-                 // Reject immediately if a store is missing
-                 return reject(`Critical Error: Database store ${name} not found.`);
+                return reject(`Critical Error: Database store ${name} not found.`);
             }
         });
 
         let errorOccurred = false; // Flag to track errors during writes
+        let writeErrors = []; // Store specific errors
+
+        console.log("Starting data write process..."); // Add logging
 
         try {
-            // 1. Write Transactions
-            // NOTE: As discussed, TX_STORE_NAME uses autoIncrement. We strip the imported ID.
-            // This means relationships based on original IDs will break.
-            // If preserving IDs is essential, TX_STORE_NAME schema must change.
+            // 1. Write Transactions (Using put, still remove ID for auto-increment keyPath)
+            console.log(`Attempting to write ${importedData.transactions?.length || 0} transactions...`);
             for (const tx of importedData.transactions || []) {
-                const { id, ...txToAdd } = tx; // Remove potentially conflicting ID
-                if (txToAdd.amount === undefined || txToAdd.date === undefined || txToAdd.account === undefined || txToAdd.type === undefined || txToAdd.category === undefined) {
-                     console.warn("Skipping transaction with missing essential fields:", tx);
-                     continue; // Skip malformed transactions
+                const { id, ...txToWrite } = tx; // Remove potentially conflicting ID for auto-increment store
+                if (txToWrite.amount === undefined || txToWrite.date === undefined || txToWrite.account === undefined || txToWrite.type === undefined || txToWrite.category === undefined) {
+                    console.warn("Skipping transaction with missing essential fields:", tx);
+                    continue;
                 }
-                 const request = stores[TX_STORE_NAME].add(txToAdd);
-                 request.onerror = (e) => { console.error('Error adding transaction:', txToAdd, e.target.error); errorOccurred = true; };
+                // NOTE: If TX_STORE_NAME keyPath was NOT autoIncrement, you'd use put(tx) directly.
+                // Since it IS autoIncrement, we must use add() here. Let's revert this part.
+                // If IDs need preservation, the store schema needs changing.
+                const request = stores[TX_STORE_NAME].add(txToWrite); // Keep add for auto-increment store
+                request.onerror = (e) => {
+                    const errorMsg = `Error adding transaction: ${e.target.error}`;
+                    console.error(errorMsg, txToWrite);
+                    writeErrors.push(errorMsg);
+                    errorOccurred = true;
+                };
             }
 
-            // 2. Write Accounts
-             for (const [accName, balance] of Object.entries(importedData.accounts || {})) {
-                 // Attempt to find account type if the import format includes it (e.g., from a future export improvement)
-                 // For now, assume simple { name: balance } structure and default type.
-                 const accountType = importedData._account_types?.[accName] || 'unknown'; // Example future enhancement
-                 if (typeof accName !== 'string' || typeof balance !== 'number') {
-                      console.warn("Skipping account with invalid name/balance:", accName, balance);
-                      continue;
-                 }
-                 const request = stores[ACCOUNT_STORE_NAME].add({ name: accName, balance: balance, type: accountType });
-                 request.onerror = (e) => { console.error('Error adding account:', accName, e.target.error); errorOccurred = true; };
-             }
+            // 2. Write Accounts (Using put, keyPath is 'name')
+            console.log(`Attempting to write ${Object.keys(importedData.accounts || {}).length} accounts...`);
+            for (const [accName, balance] of Object.entries(importedData.accounts || {})) {
+                const accountType = importedData._account_types?.[accName] || 'unknown'; // Keep future enhancement example
+                if (typeof accName !== 'string' || typeof balance !== 'number') {
+                    console.warn("Skipping account with invalid name/balance:", accName, balance);
+                    continue;
+                }
+                const accountData = { name: accName, balance: balance, type: accountType };
+                const request = stores[ACCOUNT_STORE_NAME].put(accountData); // Use PUT
+                request.onerror = (e) => {
+                    const errorMsg = `Error writing account '${accName}': ${e.target.error}`;
+                    console.error(errorMsg);
+                    writeErrors.push(errorMsg);
+                    errorOccurred = true;
+                };
+            }
 
-             // 3. Write Categories
-             for (const catName of importedData.categories || []) {
-                  if (typeof catName !== 'string' || !catName) {
-                      console.warn("Skipping invalid category name:", catName);
-                      continue;
-                  }
-                 const request = stores[CATEGORY_STORE_NAME].add({ name: catName });
-                  request.onerror = (e) => { console.error('Error adding category:', catName, e.target.error); errorOccurred = true; };
-             }
+            // 3. Write Categories (Using put, keyPath is 'name')
+            console.log(`Attempting to write ${importedData.categories?.length || 0} categories...`);
+            for (const catName of importedData.categories || []) {
+                if (typeof catName !== 'string' || !catName) {
+                    console.warn("Skipping invalid category name:", catName);
+                    continue;
+                }
+                const categoryData = { name: catName };
+                const request = stores[CATEGORY_STORE_NAME].put(categoryData); // Use PUT
+                request.onerror = (e) => {
+                    const errorMsg = `Error writing category '${catName}': ${e.target.error}`;
+                    console.error(errorMsg);
+                    writeErrors.push(errorMsg);
+                    errorOccurred = true;
+                };
+            }
 
-             // 4. Write Category Groups
-             for (const [catName, groupName] of Object.entries(importedData.category_groups || {})) {
-                 if (typeof catName !== 'string' || !catName || typeof groupName !== 'string' || !groupName) {
-                      console.warn("Skipping invalid category group mapping:", catName, groupName);
-                      continue;
-                 }
-                 const request = stores[GROUP_STORE_NAME].add({ categoryName: catName, groupName: groupName });
-                 request.onerror = (e) => { console.error('Error adding group mapping:', catName, e.target.error); errorOccurred = true; };
-             }
+            // 4. Write Category Groups (Using put, keyPath is 'categoryName')
+            console.log(`Attempting to write ${Object.keys(importedData.category_groups || {}).length} group mappings...`);
+            for (const [catName, groupName] of Object.entries(importedData.category_groups || {})) {
+                if (typeof catName !== 'string' || !catName || typeof groupName !== 'string' || !groupName) {
+                    console.warn("Skipping invalid category group mapping:", catName, groupName);
+                    continue;
+                }
+                const groupMapping = { categoryName: catName, groupName: groupName };
+                const request = stores[GROUP_STORE_NAME].put(groupMapping); // Use PUT
+                request.onerror = (e) => {
+                    const errorMsg = `Error writing group mapping for '${catName}': ${e.target.error}`;
+                    console.error(errorMsg);
+                    writeErrors.push(errorMsg);
+                    errorOccurred = true;
+                };
+            }
 
-             // 5. Write Budget Periods
-             for (const [period, budgetData] of Object.entries(importedData.budget_periods || {})) {
-                  if (!/^\d{4}-\d{2}$/.test(period) || typeof budgetData !== 'object') {
-                       console.warn("Skipping invalid budget period data:", period, budgetData);
-                       continue;
-                  }
-                 const request = stores[BUDGET_PERIOD_STORE_NAME].add({ period: period, budget: budgetData });
-                  request.onerror = (e) => { console.error('Error adding budget period:', period, e.target.error); errorOccurred = true; };
-             }
+            // 5. Write Budget Periods (Using put, keyPath is 'period')
+            console.log(`Attempting to write ${Object.keys(importedData.budget_periods || {}).length} budget periods...`);
+            for (const [period, budgetData] of Object.entries(importedData.budget_periods || {})) {
+                if (!/^\d{4}-\d{2}$/.test(period) || typeof budgetData !== 'object') {
+                    console.warn("Skipping invalid budget period data:", period, budgetData);
+                    continue;
+                }
+                const periodData = { period: period, budget: budgetData };
+                const request = stores[BUDGET_PERIOD_STORE_NAME].put(periodData); // Use PUT
+                request.onerror = (e) => {
+                    const errorMsg = `Error writing budget period '${period}': ${e.target.error}`;
+                    console.error(errorMsg);
+                    writeErrors.push(errorMsg);
+                    errorOccurred = true;
+                };
+            }
 
-             // 6. Write Metadata (Ready to Assign)
-             const rtaValue = typeof importedData.ready_to_assign === 'number' ? importedData.ready_to_assign : 0.0;
-             const metaRequest = stores[METADATA_STORE_NAME].put({ key: 'appData', ready_to_assign: rtaValue });
-             metaRequest.onerror = (e) => { console.error('Error writing metadata (RTA):', e.target.error); errorOccurred = true; };
-
+            // 6. Write Metadata (Using put, keyPath is 'key')
+            console.log("Attempting to write metadata (RTA)...");
+            const rtaValue = typeof importedData.ready_to_assign === 'number' ? importedData.ready_to_assign : 0.0;
+            const metadata = { key: 'appData', ready_to_assign: rtaValue };
+            const metaRequest = stores[METADATA_STORE_NAME].put(metadata); // Use PUT
+            metaRequest.onerror = (e) => {
+                const errorMsg = `Error writing metadata (RTA): ${e.target.error}`;
+                console.error(errorMsg);
+                writeErrors.push(errorMsg);
+                errorOccurred = true;
+            };
 
         } catch (loopError) {
-             // Catch errors in the loop logic itself (unlikely with simple adds)
-             console.error("Error during data processing loop:", loopError);
-             errorOccurred = true;
-             transaction.abort(); // Abort if loop fails badly
-             return reject(`Error processing import data: ${loopError.message}`);
+            console.error("Critical error during data processing loop:", loopError);
+            errorOccurred = true; // Mark error
+            writeErrors.push(`Critical loop error: ${loopError.message}`);
+            transaction.abort(); // Abort transaction immediately
+            // Reject the promise directly here since the transaction is aborted
+            return reject(`Error processing import data loop: ${loopError.message}`);
         }
 
-
+        // Transaction completion handling
         transaction.oncomplete = () => {
             if (errorOccurred) {
-                 console.warn("Import transaction completed, but some errors occurred during writing.");
-                 // Resolve, but the user should be aware data might be incomplete
-                 resolve(); // Or potentially reject based on how critical partial writes are
+                console.error("Import transaction completed, but errors occurred during writing. Data may be incomplete.", writeErrors);
+                // REJECT the promise if errors occurred, providing details
+                reject(`Import completed with errors: ${writeErrors.join("; ")}. Data might be incomplete.`);
             } else {
                 console.log("Import data write transaction complete.");
-                resolve();
+                resolve(); // Resolve only on full success
             }
         };
 
         transaction.onerror = (event) => {
+            // This catches errors that abort the transaction (like constraint errors from add)
             console.error("Import data write transaction failed:", event.target.error);
-             reject(`Database transaction failed during import: ${event.target.error}`);
+            reject(`Database transaction failed during import: ${event.target.error}`);
         };
     });
 }
