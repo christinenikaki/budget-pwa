@@ -35,11 +35,9 @@
     </nav>
     <div id="overlay" class="overlay"></div>
     <main class="container">
-        <div id="status-message" class="status-info" style="margin-bottom: 20px; text-align: center;">App Initializing...</div>
-
-        <!-- === MANAGE ACCOUNTS SECTION (Standalone Mode) === -->
+        <!-- === MANAGE ACCOUNTS SECTION === -->
         <section id="manage-accounts-section" class="main-section hidden card">
-            <h2>Manage Accounts (Standalone Mode)</h2>
+            <h2>Manage Accounts</h2>
 
             <div id="manage-accounts-content"> <!-- Wrapper div -->
                 <p>Add new accounts and set their starting balances.</p>
@@ -54,13 +52,10 @@
                         <div class="form-group">
                             <label for="new-account-type">Account Type:</label>
                             <select id="new-account-type">
+                                <option value="cash">Cash</option>
                                 <option value="checking">Checking</option>
                                 <option value="savings">Savings</option>
-                                <option value="cash">Cash</option>
                                 <option value="credit_card">Credit Card</option>
-                                <option value="line_of_credit">Line of Credit</option>
-                                <option value="asset">Other Asset (Tracking)</option>
-                                <option value="liability">Other Liability (Tracking)</option>
                             </select>
                         </div>
                         <div class="form-group">
@@ -84,9 +79,9 @@
             </div>
         </section>
 
-        <!-- === MANAGE CATEGORIES SECTION (Standalone Mode) === -->
+        <!-- === MANAGE CATEGORIES SECTION === -->
     <section id="manage-categories-section" class="main-section hidden card">
-        <h2>Manage Categories (Standalone Mode)</h2>
+        <h2>Manage Categories</h2>
 
         <div id="manage-categories-content"> <!-- Wrapper div -->
             <p>Add new categories and assign them to groups.</p>

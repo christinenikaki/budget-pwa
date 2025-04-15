@@ -43,7 +43,7 @@ const importStandaloneButton = document.getElementById('import-standalone-button
 const importStandaloneStatusDiv = document.getElementById('import-standalone-status');
 const statusMessageDiv = document.getElementById('status-message');
 
-let localBudgetData = null; // Store data loaded/managed in Standalone Mode
+let localBudgetData = null; // Store data loaded/managed in the app
 
 const budgetViewSection = document.getElementById('budget-view');
 const budgetViewMonthSpan = document.getElementById('budget-view-month');
@@ -93,8 +93,8 @@ const chartNextMonthBtn = document.getElementById('chart-next-month');
 
 // --- Define Constants ---
 const DB_NAME = 'budgetAppDB';
-const DB_VERSION = 2; // <<<< INCREMENT DB VERSION <<<<
-// --- IndexedDB Store Names for Standalone Mode ---
+const DB_VERSION = 2; // 
+// --- IndexedDB Store Names  ---
 const TX_STORE_NAME = 'transactions';
 const ACCOUNT_STORE_NAME = 'accounts';
 const CATEGORY_STORE_NAME = 'categories';
@@ -146,17 +146,6 @@ function initDB() {
             let tempDb = event.target.result;
             const transaction = event.target.transaction;
 
-            // --- REMOVE Pending Store Creation ---
-            // if (!tempDb.objectStoreNames.contains(PENDING_TX_STORE_NAME)) {
-            //     console.log(`Creating object store: ${PENDING_TX_STORE_NAME}`);
-            //     const store = tempDb.createObjectStore(PENDING_TX_STORE_NAME, {
-            //         keyPath: 'id', autoIncrement: true
-            //     });
-            //     store.createIndex('dateIndex', 'date', { unique: false });
-            //     console.log("Created pending store.");
-            // }
-
-            // --- Stores for Standalone Mode --- (Keep these creation checks)
             if (!tempDb.objectStoreNames.contains(TX_STORE_NAME)) {
                  console.log(`Creating object store: ${TX_STORE_NAME}`);
                  const store = tempDb.createObjectStore(TX_STORE_NAME, { keyPath: 'id', autoIncrement: true });
@@ -239,7 +228,7 @@ function setupBudgetEditingListener() {
         console.warn("Could not attach budget editing listener: budgetTbody not found.");
     }
 }
-// Setup listeners specific to standalone mode
+
 function setupStandaloneEventListeners() {
     if (addAccountForm) {
         addAccountForm.addEventListener('submit', handleAddAccount);
@@ -347,7 +336,7 @@ function setupAddFormListeners() {
 }
 
 function setupSyncButtonListeners() {
-    if (exportStandaloneButton) exportStandaloneButton.addEventListener('click', handleExportStandaloneData); // Standalone mode export
+    if (exportStandaloneButton) exportStandaloneButton.addEventListener('click', handleExportStandaloneData); 
 }
 
 // --- Menu Toggle Functionality ---
@@ -597,13 +586,10 @@ function displayExistingCategories(categories = [], groupsData = {}) {
 
 /**
  * Handles the click event for the "Update" button next to an existing category.
- * (Standalone Mode Only)
  * @param {Event} event The button click event.
  */
 async function handleChangeCategoryGroup(event) {
     event.preventDefault();
-    // REMOVED: Safety check for currentMode - no longer needed
-    // if (currentMode !== 'standalone') return;
 
     const button = event.currentTarget;
     const categoryName = button.dataset.categoryName;
@@ -618,15 +604,13 @@ async function handleChangeCategoryGroup(event) {
 
     const newGroupName = groupSelect.value;
 
-    itemStatusDiv.textContent = "Updating...";
-    itemStatusDiv.className = 'item-status info';
+    updateStatusMessage(itemStatusDiv, "Updating...", "info");
     button.disabled = true;
 
     try {
         await updateCategoryGroup(categoryName, newGroupName); // Call DB function
 
-        itemStatusDiv.textContent = "Group updated!";
-        itemStatusDiv.className = 'item-status'; // Default success style
+        updateStatusMessage(itemStatusDiv, "Group updated!", "success");
 
         // Update in-memory data for immediate reflection
         if (localBudgetData && localBudgetData.category_groups) {
@@ -644,19 +628,13 @@ async function handleChangeCategoryGroup(event) {
 
     } catch (error) {
         console.error(`Failed to update group for ${categoryName}:`, error);
-        itemStatusDiv.textContent = `Error: ${error}`;
-        itemStatusDiv.className = 'item-status error';
+        updateStatusMessage(itemStatusDiv, `Error: ${error}`, "error");
         button.disabled = false; // Re-enable button on error
     } finally {
-        // If NOT using loadDataFromDB, ensure button is re-enabled and status cleared eventually
-         setTimeout(() => {
-             if (itemStatusDiv.textContent.includes("updated")) itemStatusDiv.textContent = ''; // Clear success message
-             button.disabled = false;
-            }, 4000);
     }
 }
 /**
- * Updates the group assignment for an existing category in IndexedDB (Standalone Mode).
+ * Updates the group assignment for an existing category in IndexedDB.
  * Uses 'put' which handles both adding and updating.
  * @param {string} categoryName The name of the category to update.
  * @param {string} newGroupName The new group name (empty string means unassigned/remove mapping).
@@ -813,7 +791,8 @@ async function saveBudgetValue(input) {
         // Revert UI change on failure
         input.parentElement.textContent = originalValueStr; // Restore original
         updateBudgetTableTotals(); // Recalculate totals based on reverted value
-        updateStatus(`Error saving budget: ${error}`, "error"); // Show error to user
+        updateStatusMessage(statusMessageDiv, `Error saving budget: ${error}`, "error");
+
     } finally {
         // Cleanup: Ensure input is removed even if save failed but wasn't caught
         if (input.parentElement && input.parentElement.contains(input)) {
@@ -839,7 +818,7 @@ function cancelBudgetValue(input) {
 
 /**
  * Updates a specific category's budgeted amount for a given period in IndexedDB,
- * and adjusts Ready To Assign accordingly. (Standalone Mode Only)
+ * and adjusts Ready To Assign accordingly.
  * @param {string} period The budget period (YYYY-MM).
  * @param {string} categoryName The name of the category.
  * @param {number} newAmount The new budgeted amount.
@@ -848,8 +827,6 @@ function cancelBudgetValue(input) {
 function updateBudgetAmountInDB(period, categoryName, newAmount) {
     return new Promise(async (resolve, reject) => {
         if (!db) return reject("Database not initialized.");
-        // REMOVED: Check for currentMode !== 'standalone'
-        // if (currentMode !== 'standalone') return reject("Budget editing only allowed in Standalone mode.");
 
         const transaction = db.transaction([BUDGET_PERIOD_STORE_NAME, METADATA_STORE_NAME], 'readwrite');
         const bpStore = transaction.objectStore(BUDGET_PERIOD_STORE_NAME);
@@ -915,7 +892,7 @@ function updateBudgetAmountInDB(period, categoryName, newAmount) {
 }
 
 /**
- * Processes budget data and updates the UI (Standalone Mode Only).
+ * Processes budget data and updates the UI.
  * @param {object} data The budget data object from DB.
  */
 async function processBudgetData(data) {
@@ -955,7 +932,7 @@ async function processBudgetData(data) {
     data.category_groups = data.category_groups || {};
     data.ready_to_assign = data.ready_to_assign || 0.0;
 
-    // Store loaded data globally for Standalone mode
+    // Store loaded data
     localBudgetData = JSON.parse(JSON.stringify(data));
     let allTransactionsForDisplay = data.transactions || [];
 
@@ -1003,8 +980,6 @@ async function processBudgetData(data) {
         // --- Update Views for Initial Month ---
         updateBudgetView(initialDisplayMonth);
         updateChartView(initialDisplayMonth);
-
-        updateStatus(`Data processed. Displaying ${initialDisplayMonth}.`, "success");
 
     } catch (uiError) {
         console.error("Error updating UI:", uiError);
@@ -1321,15 +1296,14 @@ function calculateBudgetViewData(period, categories = [], budgetPeriodsData = {}
 /**
  * Renders the calculated budget data into the HTML table.
  * ADDS data-category to rows and editable-budget class to budgeted cells.
- * (Standalone Mode Only)
  * @param {Array<object>} budgetRows Array of row data objects.
  * @param {{budgeted: number, spent: number, available: number}} totals Calculated totals.
  * @param {string} period The period being displayed (YYYY-MM).
  * @param {string} titleSuffix Optional suffix for the title (no longer used).
  */
-function renderBudgetTable(budgetRows, totals, period, titleSuffix = "") { // titleSuffix is unused now
+function renderBudgetTable(budgetRows, totals, period, titleSuffix = "") { 
     if (budgetTbody) budgetTbody.innerHTML = '';
-    if (budgetViewMonthSpan) budgetViewMonthSpan.textContent = (period || '--'); // Removed suffix
+    if (budgetViewMonthSpan) budgetViewMonthSpan.textContent = (period || '--'); 
 
     if (totalBudgetedValueTd) totalBudgetedValueTd.textContent = '--';
     if (totalSpentValueTd) totalSpentValueTd.textContent = '--';
@@ -1387,7 +1361,6 @@ function renderBudgetTable(budgetRows, totals, period, titleSuffix = "") { // ti
             cellBudgeted.className = `currency ${getCurrencyClass(row.budgeted, true)}`;
             cellBudgeted.style.textAlign = 'right';
 
-            // REMOVED: Check for currentMode - always add editable class now
             cellBudgeted.classList.add('editable-budget');
             cellBudgeted.title = "Click to edit budget";
 
@@ -1676,23 +1649,73 @@ function formatCurrency(amount) {
     const options = { style: 'currency', currency: 'EUR' }; // Adjust currency as needed
     return amount < 0 ? `(${Math.abs(amount).toLocaleString(undefined, options)})` : amount.toLocaleString(undefined, options);
 }
-/** Updates the status message area. */
-function updateStatus(message, type = "info") {
-    // Use the general status div if loadStatusDiv was removed/renamed
-    const statusElement = statusMessageDiv || document.getElementById('some-other-status-div'); // Find a suitable general status element
-    if (!statusElement) {
-        console.warn("Status element not found for message:", message);
+
+/**
+ * Updates a specific status message element and optionally auto-hides success messages.
+ *
+ * @param {HTMLElement} element The DOM element to update (e.g., addTxStatusDiv).
+ * @param {string} message The message text to display.
+ * @param {'info'|'success'|'error'} type The type of message (controls styling and auto-hide).
+ * @param {number} [autoHideDelay=4000] The delay in milliseconds before hiding success messages.
+ */
+function updateStatusMessage(element, message, type, autoHideDelay = 4000) {
+    if (!element) {
+        console.warn("updateStatusMessage called with invalid element for message:", message);
         return;
     }
-    statusElement.textContent = message;
-    statusElement.className = `status-${type}`; // Assumes classes status-info, status-success, status-error exist
-    console.log(`Status [${type}]: ${message}`);
+
+    // --- Clear any existing timeout for this specific element ---
+    const existingTimeoutId = element.dataset.hideTimeoutId;
+    if (existingTimeoutId) {
+        clearTimeout(parseInt(existingTimeoutId));
+        delete element.dataset.hideTimeoutId;
+        // console.log(`Cleared existing timeout ${existingTimeoutId} for element`, element.id);
+    }
+
+    // --- Set the new message and class ---
+    element.textContent = message;
+    // Ensure base classes are kept if needed, adjust if your CSS structure requires it
+    element.className = `status-${type}`; // Assumes your CSS uses status-info, status-success, status-error directly
+
+    console.log(`Status [${type}] for ${element.id || 'element'}: ${message}`);
+
+    // --- Set a new timeout ONLY for success messages ---
+    if (type === 'success' && autoHideDelay > 0) {
+        const newTimeoutId = setTimeout(() => {
+            // Double-check if the message is still the one we set before clearing
+            if (element.textContent === message) {
+                element.textContent = ''; // Clear the message
+                element.className = ''; // Optionally reset class
+                delete element.dataset.hideTimeoutId; // Clean up dataset
+                // console.log(`Auto-hid success message for element`, element.id);
+            } else {
+                // console.log(`Timeout expired but message changed for element`, element.id);
+                 delete element.dataset.hideTimeoutId; // Still clean up dataset
+            }
+        }, autoHideDelay);
+
+        // Store the new timeout ID on the element's dataset
+        element.dataset.hideTimeoutId = newTimeoutId;
+        // console.log(`Set new timeout ${newTimeoutId} for element`, element.id);
+    }
 }
+
+/** Updates the main status message area using the centralized handler. */
+function updateStatus(message, type = "info") {
+    const statusElement = statusMessageDiv; // Target the main status div at the top
+    if (!statusElement) {
+        console.warn("Main status element (statusMessageDiv) not found for message:", message);
+        return;
+    }
+    // Call the centralized function, which will handle auto-hide for success types
+    updateStatusMessage(statusElement, message, type);
+}
+
 /** Clears the data display areas. */
 function clearDataDisplay() {
     if (balancesList) balancesList.innerHTML = '<li>--</li>';
     if (rtaValueElement) { rtaValueElement.textContent = '--'; rtaValueElement.className = 'summary-value zero-currency'; }
-    if (budgetViewRtaValueElement) { // <-- ADD THIS BLOCK
+    if (budgetViewRtaValueElement) { 
         budgetViewRtaValueElement.textContent = '--';
         budgetViewRtaValueElement.className = 'summary-value zero-currency';
     }
@@ -1765,8 +1788,8 @@ function displayRTA(rta = 0.0) {
 }
 
 /**
- * Displays transactions in the table (Standalone Mode Only).
- * @param {Array} displayTransactions Transactions to display (All from DB).
+ * Displays transactions in the table 
+ * @param {Array} displayTransactions Transactions to display 
  */
 function displayTransactions(displayTransactions = []) {
     if (!transactionsTbody) return;
@@ -1941,7 +1964,7 @@ function populateCategoryFilter(categories = [], transactions = [], selectElemen
 
 /**
  * Dynamically updates the category dropdown in the Add Transaction form
- * based on the selected transaction type (Standalone Mode Only).
+ * based on the selected transaction type 
  * @param {string} selectedType The value from the tx-type select ('income', 'expense', 'refund').
  */
 function updateCategoryDropdownForTxType(selectedType) {
@@ -2010,7 +2033,7 @@ async function handleDeleteTransactionClick(event) {
 
     if (!transactionId) {
         console.error("Delete button clicked but no transaction ID found.");
-        updateStatus("Error: Could not identify transaction to delete.", "error");
+        updateStatusMessage(statusMessageDiv, "Error: Could not identify transaction to delete.", "error");
         return;
     }
 
@@ -2026,11 +2049,11 @@ async function handleDeleteTransactionClick(event) {
         // Always delete from standalone store
         console.log(`Attempting to delete standalone transaction ID: ${transactionId}`);
         await deleteTransactionStandalone(parseInt(transactionId, 10)); // Assume ID is numeric key
-        updateStatus("Transaction deleted successfully.", "success"); 
+        updateStatusMessage(statusMessageDiv, "Transaction deleted successfully.", "success");
 
     } catch (error) {
         console.error("Failed to delete transaction:", error);
-        updateStatus(`Error deleting transaction: ${error}`, "error");
+        updateStatusMessage(statusMessageDiv, `Error deleting transaction: ${error}`, "error");
         button.disabled = false; // Re-enable button on error
          if (icon) { icon.classList.replace('fa-spinner', 'fa-trash-can'); icon.classList.remove('fa-spin'); }
     }
@@ -2038,9 +2061,9 @@ async function handleDeleteTransactionClick(event) {
 
 // --- IndexedDB Interaction Functions ---
 
-/** Loads all budget data from IndexedDB stores (Standalone Mode). */
+/** Loads all budget data from IndexedDB stores. */
 async function loadDataFromDB() {
-   console.log("Attempting to load data from IndexedDB for Standalone mode...");
+   console.log("Attempting to load data from IndexedDB...");
    if (!db) {
        console.error("DB not available for loading.");
        updateStatus("Error: Cannot load data, database unavailable.", "error");
@@ -2106,9 +2129,9 @@ async function loadDataFromDB() {
             console.log("Read transaction from IndexedDB complete.");
             // Check if ANY data was loaded. If not, maybe show first-time message.
             if (Object.values(results).every(r => !r || (Array.isArray(r) && r.length === 0))) {
-                console.log("No data found in IndexedDB for standalone mode.");
-                updateStatus("No data found. Add entries or import data.", "info");
-                 processBudgetData(null, 'standalone'); // Show empty state
+                console.log("No data found in IndexedDB ");
+                updateStatusMessage("No data found. Add entries or import data.", "info");
+                processBudgetData(null, 'standalone'); // Show empty state
             }
         };
         transaction.onerror = (event) => {
@@ -2119,10 +2142,10 @@ async function loadDataFromDB() {
    });
 }
 
-/** Saves a transaction directly and updates state (Standalone Mode) - PLACEHOLDER */
+/** Saves a transaction directly and updates state */
 async function saveTransactionStandalone(transaction) {
-    console.warn("Standalone save transaction - NOT YET FULLY IMPLEMENTED");
-    updateStatus("Adding transaction (Standalone - Basic Save)...", "info");
+    console.warn("Standalone save transaction ");
+    updateStatus("Adding transaction ...", "info");
 
     // 1. Add transaction to TX_STORE_NAME
     // 2. Update account balance in ACCOUNT_STORE_NAME
@@ -2204,7 +2227,7 @@ async function saveTransactionStandalone(transaction) {
             console.log("Standalone save transaction complete.");
             // Reload data to reflect changes (simplest approach)
             loadDataFromDB().catch(console.error);
-            updateStatus("Transaction added locally.", "success");
+            updateStatusMessage(addTxStatusDiv, "Transaction added.", "success"); 
             newTxForm.reset(); txDateInput.valueAsDate = new Date(); // Clear form
         };
         tx.onerror = (event) => {
@@ -2215,12 +2238,11 @@ async function saveTransactionStandalone(transaction) {
     });
 }
 
-/** Exports all data from IndexedDB (Standalone Mode) - PLACEHOLDER */
+/** Exports all data from IndexedDB */
 async function handleExportStandaloneData() {
-    console.warn("Standalone export - NOT YET FULLY IMPLEMENTED");
+    console.warn("Standalone export ");
     if (exportStandaloneStatusDiv) {
-         exportStandaloneStatusDiv.textContent = "Exporting all local data...";
-         exportStandaloneStatusDiv.className = 'status-info';
+        updateStatusMessage(exportStandaloneStatusDiv, "Exporting all local data...", "info");
     }
 
     // 1. Read ALL data from ALL relevant stores (similar to loadDataFromDB)
@@ -2276,20 +2298,18 @@ async function handleExportStandaloneData() {
          URL.revokeObjectURL(url);
 
          if (exportStandaloneStatusDiv) {
-             exportStandaloneStatusDiv.textContent = "Standalone data exported successfully.";
-             exportStandaloneStatusDiv.className = 'status-success';
+            updateStatusMessage(exportStandaloneStatusDiv, "Data exported successfully.", "success");
          }
 
     } catch (error) {
          console.error("Standalone export failed:", error);
          if (exportStandaloneStatusDiv) {
-             exportStandaloneStatusDiv.textContent = `Export failed: ${error}`;
-             exportStandaloneStatusDiv.className = 'status-error';
+             updateStatusMessage(exportStandaloneStatusDiv, `Export failed: ${error}`, "error");
          }
     }
 }
 
-/** Clears ALL budget data from IndexedDB (Standalone Mode). Used when switching modes. */
+/** Clears ALL budget data from IndexedDB */
 async function clearAllStandaloneData() {
     console.warn("Clearing ALL standalone data from IndexedDB...");
     if (!db) {
@@ -2339,18 +2359,16 @@ async function clearAllStandaloneData() {
     });
 }
 
-// --- Delete Transaction (Standalone Mode) ---
+// --- Delete Transaction ---
 /**
  * Deletes a transaction from the main store and adjusts account balance and RTA accordingly.
- * Reloads all data afterwards to refresh the UI. (Standalone Mode Only)
+ * Reloads all data afterwards to refresh the UI. 
  * @param {number} transactionId The ID (keyPath value) of the transaction to delete.
  * @returns {Promise<void>}
  */
 function deleteTransactionStandalone(transactionId) {
     return new Promise(async (resolve, reject) => {
         if (!db) return reject("Database not initialized.");
-        // REMOVED: Check for currentMode !== 'standalone'
-        // if (currentMode !== 'standalone') return reject("Can only delete main transactions in Standalone mode.");
 
         if (typeof transactionId !== 'number' || isNaN(transactionId)) {
             return reject("Invalid ID provided for standalone deletion.");
@@ -2489,15 +2507,14 @@ function deleteTransactionStandalone(transactionId) {
 }
 
 /**
- * Handles the "Import File and Replace Data" button click (Standalone Mode Only).
+ * Handles the "Import File and Replace Data" button click .
  */
 function handleStandaloneImport() {
     if (!importStandaloneFileInput || !importStandaloneStatusDiv || !importStandaloneButton) {
          console.error("Missing required elements for standalone import.");
          // Optionally provide feedback to the user if status div exists
          if (importStandaloneStatusDiv) {
-            importStandaloneStatusDiv.textContent = "Error: Import UI elements not found.";
-            importStandaloneStatusDiv.className = 'status-error';
+            updateStatusMessage(importStandaloneStatusDiv, "Error: Import UI elements not found.", "error");
          }
          return;
     }
@@ -2505,18 +2522,15 @@ function handleStandaloneImport() {
     const file = importStandaloneFileInput.files?.[0];
 
     if (!file) {
-        importStandaloneStatusDiv.textContent = "Error: No file selected.";
-        importStandaloneStatusDiv.className = 'status-error';
+        updateStatusMessage(importStandaloneStatusDiv, "Error: No file selected.", "error");
         return;
     }
     if (file.type !== "application/json") {
-        importStandaloneStatusDiv.textContent = `Error: Selected file (${file.name}) is not a JSON file.`;
-        importStandaloneStatusDiv.className = 'status-error';
+        updateStatusMessage(importStandaloneStatusDiv, `Error: Selected file (${file.name}) is not a JSON file.`, "error");
         return;
     }
 
-    importStandaloneStatusDiv.textContent = `Reading file: ${file.name}...`;
-    importStandaloneStatusDiv.className = 'status-info';
+    updateStatusMessage(importStandaloneStatusDiv, `Reading file: ${file.name}...`, "info");
     importStandaloneButton.disabled = true; // Disable while processing
 
     const reader = new FileReader();
@@ -2529,24 +2543,21 @@ function handleStandaloneImport() {
             jsonData = JSON.parse(fileContent);
         } catch (error) {
             console.error("Error parsing import JSON:", error);
-            importStandaloneStatusDiv.textContent = `Error: Could not parse JSON file. Is it valid? ${error.message}`;
-            importStandaloneStatusDiv.className = 'status-error';
+            updateStatusMessage(importStandaloneStatusDiv, `Error: Could not parse JSON file. Is it valid? ${error.message}`, "error");
             importStandaloneButton.disabled = false; // Re-enable button
             return;
         }
 
         // Basic validation
         if (!validateImportData(jsonData)) {
-             importStandaloneStatusDiv.textContent = `Error: File does not appear to be valid budget data (missing key fields like accounts, transactions, etc.).`;
-             importStandaloneStatusDiv.className = 'status-error';
+             updateStatusMessage(importStandaloneStatusDiv, `Error: File does not appear to be valid budget data (missing key fields like accounts, transactions, etc.)`, "error");
              importStandaloneButton.disabled = false;
              return;
         }
 
         // *** CRITICAL: User Confirmation ***
         if (!confirm("IMPORTANT: Are you sure you want to replace ALL existing data on this device with the content of this file? This cannot be undone.")) {
-            importStandaloneStatusDiv.textContent = "Import cancelled by user.";
-            importStandaloneStatusDiv.className = 'status-info';
+            updateStatusMessage(importStandaloneStatusDiv, "Import cancelled by user.", "info");
             importStandaloneButton.disabled = false;
              importStandaloneFileInput.value = null; // Clear file input
              // Ensure button is disabled again since file is cleared
@@ -2556,17 +2567,15 @@ function handleStandaloneImport() {
 
         try {
             // 1. Clear existing data
-            importStandaloneStatusDiv.textContent = "Clearing existing data...";
-            importStandaloneStatusDiv.className = 'status-info';
+            updateStatusMessage(importStandaloneStatusDiv, "Clearing existing data...", "info");
             await clearAllStandaloneData();
 
             // 2. Write imported data
-            importStandaloneStatusDiv.textContent = "Importing data into database...";
+            updateStatusMessage(importStandaloneStatusDiv, "Importing data into database...", "info");
             await writeImportedDataToDB(jsonData);
 
              // 3. Reload data and refresh UI
-             importStandaloneStatusDiv.textContent = "Import successful. Reloading view...";
-             importStandaloneStatusDiv.className = 'status-success';
+             updateStatusMessage(importStandaloneStatusDiv, "Import successful. Reloading view...", "success");
              await loadDataFromDB();
 
              // 4. Reset import form
@@ -2578,16 +2587,14 @@ function handleStandaloneImport() {
         } catch (error) {
              console.error("Import process failed:", error);
              // Provide more specific error from writeImportedDataToDB if possible
-             importStandaloneStatusDiv.textContent = `Import failed: ${error}`;
-             importStandaloneStatusDiv.className = 'status-error';
+             updateStatusMessage(importStandaloneStatusDiv, `Import failed: ${error}`, "error");
              importStandaloneButton.disabled = false; // Re-enable button on error
         }
     };
 
     reader.onerror = (e) => {
         console.error("Error reading import file:", e);
-        importStandaloneStatusDiv.textContent = `Error reading file ${file.name}.`;
-        importStandaloneStatusDiv.className = 'status-error';
+        updateStatusMessage(importStandaloneStatusDiv, `Error reading file ${file.name}.`, "error");
         importStandaloneButton.disabled = false;
     };
 
@@ -2776,17 +2783,11 @@ function writeImportedDataToDB(importedData) {
 
 // --- Add Form Handling ---
 /**
- * Handles the submission of the Add New Account form (Standalone Mode).
+ * Handles the submission of the Add New Account form .
  * @param {Event} event The form submission event.
  */
 async function handleAddAccount(event) {
     event.preventDefault();
-    // REMOVED: Check for currentMode !== 'standalone'
-    // if (currentMode !== 'standalone') {
-    //     addAccountStatusDiv.textContent = "Account management only available in Standalone mode.";
-    //     addAccountStatusDiv.className = 'status-error';
-    //     return;
-    // }
 
     // Check required elements exist
     if (!addAccountForm || !newAccountNameInput || !newAccountBalanceInput || !addAccountStatusDiv || !newAccountTypeSelect) {
@@ -2799,25 +2800,21 @@ async function handleAddAccount(event) {
     const accountType = newAccountTypeSelect.value;
     const startingBalance = parseFloat(newAccountBalanceInput.value);
 
-    addAccountStatusDiv.textContent = "Adding account...";
-    addAccountStatusDiv.className = 'status-info';
+    updateStatusMessage(addAccountStatusDiv, "Adding account...", "info");
 
     // Validation
     if (!accountName) {
-        addAccountStatusDiv.textContent = "Error: Account name cannot be empty.";
-        addAccountStatusDiv.className = 'status-error';
+        updateStatusMessage(addAccountStatusDiv, "Error: Account name cannot be empty.", "error");
         return;
     }
     if (isNaN(startingBalance)) {
-        addAccountStatusDiv.textContent = "Error: Invalid starting balance.";
-        addAccountStatusDiv.className = 'status-error';
+        updateStatusMessage(addAccountStatusDiv, "Error: Invalid starting balance.", "error");
         return;
     }
 
     // Check for duplicates using localBudgetData
     if (localBudgetData && localBudgetData.accounts && localBudgetData.accounts.hasOwnProperty(accountName)) {
-        addAccountStatusDiv.textContent = `Error: Account named "${accountName}" already exists.`;
-        addAccountStatusDiv.className = 'status-error';
+        updateStatusMessage(addAccountStatusDiv, `Error: Account named "${accountName}" already exists.`, "error");
         return;
     }
 
@@ -2830,8 +2827,7 @@ async function handleAddAccount(event) {
     try {
         await saveAccountAndAdjustRTA(newAccountData);
 
-        addAccountStatusDiv.textContent = `Account "${accountName}" added successfully.`;
-        addAccountStatusDiv.className = 'status-success';
+        updateStatusMessage(addAccountStatusDiv, `Account "${accountName}" added successfully.`, "success");
         addAccountForm.reset();
 
         // Refresh UI by reloading data
@@ -2839,13 +2835,12 @@ async function handleAddAccount(event) {
 
     } catch (error) {
         console.error("Failed to add account:", error);
-        addAccountStatusDiv.textContent = `Error adding account: ${error}`;
-        addAccountStatusDiv.className = 'status-error';
+        updateStatusMessage(addAccountStatusDiv, `Error adding account: ${error}`, "error");
     }
 }
 
 /**
- * Saves a new account to IndexedDB and adjusts Ready To Assign (Standalone Mode).
+ * Saves a new account to IndexedDB and adjusts Ready To Assign .
  * @param {object} accountData Object containing { name, balance, type }.
  * @returns {Promise<void>}
  */
@@ -2913,17 +2908,11 @@ function saveAccountAndAdjustRTA(accountData) {
 }
 
 /**
- * Handles the submission of the Add New Category form (Standalone Mode).
+ * Handles the submission of the Add New Category form.
  * @param {Event} event The form submission event.
  */
 async function handleAddCategory(event) {
     event.preventDefault();
-    // REMOVED: Check for currentMode !== 'standalone'
-    // if (currentMode !== 'standalone') {
-    //     addCategoryStatusDiv.textContent = "Category management only available in Standalone mode.";
-    //     addCategoryStatusDiv.className = 'status-error';
-    //     return;
-    // }
 
      // Check required elements exist
      if (!addCategoryForm || !newCategoryNameInput || !newCategoryGroupSelect || !addCategoryStatusDiv) {
@@ -2935,25 +2924,21 @@ async function handleAddCategory(event) {
     const categoryName = newCategoryNameInput.value.trim();
     const selectedGroup = newCategoryGroupSelect.value;
 
-    addCategoryStatusDiv.textContent = "Adding category...";
-    addCategoryStatusDiv.className = 'status-info';
+    updateStatusMessage(addCategoryStatusDiv, "Adding category...", "info");
 
     // Validation
     if (!categoryName) {
-        addCategoryStatusDiv.textContent = "Error: Category name cannot be empty.";
-        addCategoryStatusDiv.className = 'status-error';
+        updateStatusMessage(addCategoryStatusDiv, "Error: Category name cannot be empty.", "error");
         return;
     }
     if (!selectedGroup) {
-        addCategoryStatusDiv.textContent = "Error: Please select a category group.";
-        addCategoryStatusDiv.className = 'status-error';
+        updateStatusMessage(addCategoryStatusDiv, "Error: Please select a category group.", "error");
         return;
     }
 
     // Check for duplicates using localBudgetData
      if (localBudgetData && localBudgetData.categories && localBudgetData.categories.includes(categoryName)) {
-        addCategoryStatusDiv.textContent = `Error: Category named "${categoryName}" already exists.`;
-        addCategoryStatusDiv.className = 'status-error';
+        updateStatusMessage(addCategoryStatusDiv, `Error: Category named "${categoryName}" already exists.`, "error");
         return;
     }
 
@@ -2965,8 +2950,7 @@ async function handleAddCategory(event) {
     try {
         await saveCategoryAndGroup(newCategoryData);
 
-        addCategoryStatusDiv.textContent = `Category "${categoryName}" added successfully to group "${selectedGroup}".`;
-        addCategoryStatusDiv.className = 'status-success';
+        updateStatusMessage(addCategoryStatusDiv, `Category "${categoryName}" added successfully to group "${selectedGroup}".`, "success");
         addCategoryForm.reset();
 
         // Refresh UI by reloading data
@@ -2974,13 +2958,12 @@ async function handleAddCategory(event) {
 
     } catch (error) {
         console.error("Failed to add category:", error);
-        addCategoryStatusDiv.textContent = `Error adding category: ${error}`;
-        addCategoryStatusDiv.className = 'status-error';
+        updateStatusMessage(addCategoryStatusDiv, `Error adding category: ${error}`, "error");
     }
 }
 
 /**
- * Saves a new category name and its group assignment to IndexedDB (Standalone Mode).
+ * Saves a new category name and its group assignment to IndexedDB.
  * @param {object} categoryData Object containing { name, group }.
  * @returns {Promise<void>}
  */
@@ -3029,24 +3012,22 @@ function saveCategoryAndGroup(categoryData) {
     });
 }
 
-/** Handles the submission of the new transaction form (Standalone Mode Only). */
+/** Handles the submission of the new transaction form. */
 async function handleAddTransaction(event) {
     event.preventDefault();
     const statusDiv = addTxStatusDiv; // Use a local variable for clarity
     if (!statusDiv) return;
-    statusDiv.textContent = "Adding...";
+    updateStatusMessage(statusDiv, "Adding...", "info");
     statusDiv.className = 'status-info';
 
     // Basic validation
     if (!txDateInput.value || !txAccountSelect.value || !txCategorySelect.value || !txAmountInput.value) {
-        statusDiv.textContent = "Error: Please fill all required fields.";
-        statusDiv.className = 'status-error';
+        updateStatusMessage(statusDiv, "Error: Please fill all required fields.", "error");
         return;
     }
     const amount = parseFloat(txAmountInput.value);
      if (isNaN(amount) || amount <= 0) {
-        statusDiv.textContent = "Error: Invalid amount.";
-        statusDiv.className = 'status-error';
+        updateStatusMessage(statusDiv, "Error: Invalid amount.", "error");
         return;
     }
 
@@ -3065,8 +3046,7 @@ async function handleAddTransaction(event) {
 
     } catch (error) {
         console.error("Failed to add transaction:", error);
-        statusDiv.textContent = `Error: ${error}`;
-        statusDiv.className = 'status-error';
+        updateStatusMessage(statusDiv, `Error: ${error}`, "error");
     }
 }
 /** Generates a Version 4 UUID string. */
