@@ -479,6 +479,14 @@ function setupFilterListeners() {
 function setupAddFormListeners() {
     if (newTxForm) newTxForm.addEventListener('submit', handleAddTransaction);
     if (txDateInput) txDateInput.valueAsDate = new Date(); // Default date
+
+    // --- Add listener for type change ---
+    if (txTypeSelect) {
+        txTypeSelect.addEventListener('change', (event) => {
+            updateCategoryDropdownForTxType(event.target.value);
+        });
+        updateCategoryDropdownForTxType(txTypeSelect.value);
+    }
 }
 
 function setupSyncButtonListeners() {
@@ -2149,7 +2157,7 @@ function populateAccountFilter(accounts, selectElements = []) {
 }
 
 /**
- * Populates category filter dropdown(s). Filters out internal/archived for the add form.
+ * Populates category filter dropdown(s). Filters out internal/archived/savings initially for the add form dropdown.
  * @param {Array} categories Base categories array.
  * @param {Array} transactions Transactions list (to find implicit categories).
  * @param {Array<HTMLSelectElement>} selectElements Array of select elements to populate.
@@ -2169,26 +2177,101 @@ function populateCategoryFilter(categories = [], transactions = [], selectElemen
     selectElements.forEach(select => {
         if (!select) return;
         const firstOptionText = select.options.length > 0 ? select.options[0].text : "";
-        select.length = 0;
-        if(firstOptionText.toLowerCase().includes("all") || firstOptionText.toLowerCase().includes("select")){
-             select.add(new Option(firstOptionText, ""));
+        const isAddFormCategoryDropdown = select.id === 'tx-category'; // Check if it's the add form dropdown
+
+        select.length = 0; // Clear existing options
+        if (firstOptionText.toLowerCase().includes("all") || firstOptionText.toLowerCase().includes("select")) {
+            select.add(new Option(firstOptionText, ""));
         }
 
         let categoriesForThisSelect = allSortedCategories;
 
-        // Filter for the ADD form dropdown (exclude certain groups)
-        if (select.id === 'tx-category') {
-            categoriesForThisSelect = allSortedCategories.filter(cat =>
-                groupsData[cat] !== SAVINGS_GROUP_NAME &&
-                groupsData[cat] !== ARCHIVED_GROUP_NAME
-            );
-        }
+        // --- Initial filtering (Applied to ALL dropdowns initially) ---
+        categoriesForThisSelect = allSortedCategories.filter(cat => {
+            const group = groupsData[cat];
+            if (group === ARCHIVED_GROUP_NAME) return false; // Always exclude Archived
+            if (isAddFormCategoryDropdown && group === SAVINGS_GROUP_NAME) return false; // Exclude Savings from Add Form initially
+            return true;
+        });
 
+        // Populate the dropdown
         categoriesForThisSelect.forEach(name => {
             if (name) select.add(new Option(name, name));
         });
     });
+
+     // --- After initial population, specifically update the Add Form dropdown based on its default type ---
+     // This ensures the Add form starts correctly filtered for "Expense"
+     if (txCategorySelect && txTypeSelect) {
+         updateCategoryDropdownForTxType(txTypeSelect.value); // Call the dynamic update function
+     }
 }
+
+/**
+ * Dynamically updates the category dropdown in the Add Transaction form
+ * based on the selected transaction type.
+ * @param {string} selectedType The value from the tx-type select ('income', 'expense', 'refund').
+ */
+function updateCategoryDropdownForTxType(selectedType) {
+    if (!txCategorySelect) return;
+
+    // Get the relevant budget data (categories and groups)
+    const data = (currentMode === 'standalone') ? localBudgetData : originalBudgetData;
+    if (!data || !data.categories || !data.category_groups) {
+        console.warn("Cannot update category dropdown: Missing category data.");
+        // Optionally clear the dropdown or leave it as is
+        txCategorySelect.innerHTML = '<option value="">-- No Categories Loaded --</option>';
+        return;
+    }
+
+    const allCategories = data.categories || [];
+    const groupsData = data.category_groups || {};
+    let filteredCategories = [];
+
+    // Filter categories based on the selected transaction type
+    if (selectedType === 'income') {
+        // Show ONLY categories assigned to the INCOME group
+        filteredCategories = allCategories.filter(cat => groupsData[cat] === INCOME_GROUP_NAME);
+    } else { // For 'expense' and 'refund'
+        // Show categories NOT assigned to INCOME, SAVINGS, or ARCHIVED groups
+        filteredCategories = allCategories.filter(cat => {
+            const group = groupsData[cat];
+            return group !== INCOME_GROUP_NAME &&
+                   group !== SAVINGS_GROUP_NAME &&
+                   group !== ARCHIVED_GROUP_NAME;
+        });
+    }
+
+    // Sort the filtered categories
+    filteredCategories.sort();
+
+    // Remember the currently selected value, if any
+    const previouslySelectedValue = txCategorySelect.value;
+
+    // Clear existing options
+    txCategorySelect.innerHTML = '';
+
+    // Add the default "-- Select Category --" option
+    txCategorySelect.add(new Option('-- Select Category --', ''));
+
+    // Add the filtered options
+    filteredCategories.forEach(name => {
+        if (name) { // Ensure name is not empty/null
+            const option = new Option(name, name);
+            txCategorySelect.add(option);
+        }
+    });
+
+    // Try to re-select the previous value if it still exists in the new list
+    if (filteredCategories.includes(previouslySelectedValue)) {
+        txCategorySelect.value = previouslySelectedValue;
+    } else {
+        txCategorySelect.value = ''; // Reset selection if previous value is no longer valid
+    }
+
+    console.log(`Category dropdown updated for type: ${selectedType}`);
+}
+
 // --- Transaction Deletion Handler ---
 async function handleDeleteTransactionClick(event) {
     const button = event.currentTarget;
